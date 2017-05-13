@@ -55,8 +55,7 @@ DISPLAYSURF = pygame.display.set_mode((MAPWIDTH, MAPHEIGHT))
 
 # setup hexworld
 landscape = Landscape(radius=RADIUS, seed=1332)
-landscape.print()
-landscape.land[(0,0)].water = 20
+#landscape.land[(0,0)].water = 20
 
 clock = pygame.time.Clock()
 step = 0
@@ -76,16 +75,11 @@ while True:
 
     # Advance the game state.
     # TODO only advance the game state if we've passed a tick threshold
-    landscape.land[(0,0)].add_change(FlowWaterIn(1))
     landscape.do_step()
-    #landscape = Landscape(radius=RADIUS, seed = step)
 
     # Draw Landscape.
     for land in landscape.scan_land():
-        colour = BLUE if land.water > 0 else GREEN
-        # Use red as height indication.
-        height_fraction = land.height / 30 + 0.5
-        colour = colour.scaled(height_fraction)
+        colour = GREEN
 
         p = hex_to_pixel(layout, land.hex).rounded()
 
