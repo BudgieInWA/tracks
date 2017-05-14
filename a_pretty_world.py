@@ -27,14 +27,15 @@ class RGB(collections.namedtuple("Colour", "r g b")):
     def scaled(self, k):
         return RGB(r=k*self.r, g=k*self.g, b=k*self.b)
 
-FPS = 1
+FPS = 15
 
 #constants representing colours
-BLACK = RGB(0,   0,   0  )
+BLACK = RGB(  0,   0,   0)
 WHITE = RGB(255, 255, 255)
-BROWN = RGB(153, 76,  0  )
-GREEN = RGB(0,   255, 0  )
-BLUE  = RGB(0,   0,   255)
+BROWN = RGB(153,  76,   0)
+RED   = RGB(255,   0,   0)
+GREEN = RGB(  0, 255,   0)
+BLUE  = RGB(  0,   0, 255)
 
 pygame.font.init()
 FONT = pygame.font.SysFont("sans-serif", 24)
@@ -54,8 +55,10 @@ pygame.init()
 DISPLAYSURF = pygame.display.set_mode((MAPWIDTH, MAPHEIGHT))
 
 # setup hexworld
-landscape = Landscape(radius=RADIUS, seed=1)
+landscape = Landscape(radius=RADIUS, seed=420)
 #landscape.land[(0,0)].water = 20
+train_cars = [TrainCar(next(iter(landscape.land[(0, 0)].tracks)))]
+
 
 clock = pygame.time.Clock()
 step = 0
@@ -76,6 +79,14 @@ while True:
     # Advance the game state.
     # TODO only advance the game state if we've passed a tick threshold
     landscape.do_step()
+    for t in train_cars:
+        t.do_step()
+
+
+    # Debug: mark tracks that have cars on them
+    for car in train_cars:
+        if car.track_segment:
+            car.track_segment.had_car = True
 
     # Draw Landscape.
     for land in landscape.scan_land():
@@ -96,17 +107,30 @@ while True:
             target_pos = hex_to_pixel(layout, land.hex.add(track.dir))
             line_end = Point((center.x + target_pos.x) / 2, (center.y + target_pos.y) / 2).rounded()
 
+            track.xy_center = pygame.math.Vector2(center)
+            track.xy_vector = pygame.math.Vector2(line_end) - track.xy_center
+
             pygame.draw.line(
                     DISPLAYSURF,
-                    BLACK,
+                    BLUE if track.had_car else WHITE,
                     center,
                     line_end,
-                    3)
+                    10)
 
         if False:
             label = FONT.render(str(land.hex), False, WHITE)
             DISPLAYSURF.blit(label, pygame.math.Vector2(p) - (label.get_width()/2, label.get_height()/2))
 
+    # draw train cars
+    for car in train_cars:
+        if car.track_segment:
+            car_xy = car.track_segment.xy_center + car.track_segment.xy_vector * car.track_pos
+            pygame.draw.circle(
+                    DISPLAYSURF,
+                    RED,
+                    Point(*car_xy).rounded(),
+                    int(TILESIZE / 5),
+                    0)
 
     # Update the display.
     pygame.display.update()

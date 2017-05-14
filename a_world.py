@@ -79,14 +79,60 @@ class LandHex:
     def __str__(self):
         return "{},{}".format(self.hex.r, self.hex.q)
 
+
 class TrackSegment:
     def __init__(self, land, dir):
         self.land = land
         self.dir = dir
+        self.inside_neighbours = set()
+        self.outside_neighbours = set()
+
+        #debug:
+        self.had_car = False
+
+    def neighbours(self, dir):
+        return self.outside_neighbours if dir > 0 else self.inside_neighbours
+
 
 class TrainCar:
-    def __init__(self, type):
-        self.type = type
+    def __init__(self, track):
+        self.track_segment = track
+        self.track_facing = 1
+        self.track_pos = 0.0
+        self.speed = 0.1
+
+    def do_step(self):
+        self.do_move()
+
+    def do_move(self):
+        """Move along the track."""
+        if not self.track_segment: return
+
+        self.track_pos += self.speed * self.track_facing
+
+        # Move to the next track segment if needed.
+        if self.track_pos > 1.0:
+            try:
+                next_segment = next(iter(self.track_segment.outside_neighbours))
+                self.track_segment = next_segment
+                self.track_facing = -self.track_facing
+                self.track_pos = 2.0 - self.track_pos
+            except StopIteration:
+                # Fallen off the end of the track!
+                print("fallen off track")
+                self.track_segment = None
+
+        if self.track_pos < 0.0:
+            try:
+                next_segment = next(iter(self.track_segment.inside_neighbours))
+                self.track_segment = next_segment
+                self.track_facing = -self.track_facing
+                self.track_pos = -self.track_pos
+            except StopIteration:
+                # reached the end of the line
+                print("end of the line")
+                self.track_pos = 0.0
+                self.speed = 0.0
 
 
 class Landscape:
@@ -114,15 +160,26 @@ class Landscape:
         rand.seed(self.seed)
         land = self.land[Hex(0, 0)]
         dir = None
+        last_segment = None
         while land:
             # Add track back to previous hex
+            backward_segment = None
             if dir:
-                land.tracks.add(TrackSegment(land, dir.scaled(-1)))
+                backward_segment = TrackSegment(land, dir.scaled(-1))
+                if last_segment:
+                    backward_segment.outside_neighbours.add(last_segment)
+                    last_segment.outside_neighbours.add(backward_segment)
+                land.tracks.add(backward_segment)
 
             # Choose new direction and add tracks forward
             dir = rand.choice(Hex.directions) # TODO make sure the turns aren't too tight.
-            land.tracks.add(TrackSegment(land, dir))
+            forward_segment = TrackSegment(land, dir)
+            if backward_segment:
+                forward_segment.inside_neighbours.add(backward_segment)
+                backward_segment.inside_neighbours.add(forward_segment)
+            land.tracks.add(forward_segment)
 
+            last_segment = forward_segment
             land = self.land.get(land.hex.add(dir))
 
 
