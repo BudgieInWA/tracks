@@ -37,10 +37,7 @@ class Hex(namedtuple('Hex', ['r', 'q'])):
         return Hex(self.r * k, self.q * k)
     
     def neighbours(self):
-        r = self.r
-        q = self.q
-        return (Hex(*h) for h in ((r+1, q), (r-1, q+1), (r, q-1), 
-                (r-1, q), (r+1, q-1), (r, q+1)))
+        return (self.add(d) for d in Hex.directions)
 
 
     @staticmethod
@@ -68,6 +65,8 @@ class Hex(namedtuple('Hex', ['r', 'q'])):
     def __str__(self):
         return "{},{}".format(self.r, self.q)
 
+Hex.directions = [Hex(1, 0), Hex(-1, 1), Hex(0, -1), Hex(-1, 0), Hex(1, -1), Hex(0, +1)]
+
 
 class LandHex:
     def __init__(self, hex):
@@ -76,13 +75,19 @@ class LandHex:
 
         self.tracks = set() 
 
-        self.init()
-
-    def init(self):
-        pass
 
     def __str__(self):
         return "{},{}".format(self.hex.r, self.hex.q)
+
+class TrackSegment:
+    def __init__(self, land, dir):
+        self.land = land
+        self.dir = dir
+
+class TrainCar:
+    def __init__(self, type):
+        self.type = type
+
 
 class Landscape:
     def __init__(self, seed=0, radius=3):
@@ -103,6 +108,23 @@ class Landscape:
         # Link land hexes via neighbours.
         for l in self.land.values():
             l.neighbours = [self.land[n] for n in l.hex.neighbours() if n in self.land]
+
+        # Generate some random tracks starting in the middle.
+        rand = random.Random()
+        rand.seed(self.seed)
+        land = self.land[Hex(0, 0)]
+        dir = None
+        while land:
+            # Add track back to previous hex
+            if dir:
+                land.tracks.add(TrackSegment(land, dir.scaled(-1)))
+
+            # Choose new direction and add tracks forward
+            dir = rand.choice(Hex.directions) # TODO make sure the turns aren't too tight.
+            land.tracks.add(TrackSegment(land, dir))
+
+            land = self.land.get(land.hex.add(dir))
+
 
     def do_step(self):
         pass
