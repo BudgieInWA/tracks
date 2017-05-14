@@ -39,6 +39,11 @@ class Hex(namedtuple('Hex', ['r', 'q'])):
     def neighbours(self):
         return (self.add(d) for d in Hex.directions)
 
+    def distance(self, h):
+        return (abs(self.q - h.q) 
+              + abs(self.q + self.r - h.q - h.r)
+              + abs(self.r - h.r)) / 2
+
 
     @staticmethod
     def range(radius):
@@ -67,6 +72,8 @@ class Hex(namedtuple('Hex', ['r', 'q'])):
 
 Hex.directions = [Hex(1, 0), Hex(-1, 1), Hex(0, -1), Hex(-1, 0), Hex(1, -1), Hex(0, +1)]
 
+print(Hex(1, 0).distance(Hex(-1,1)))
+print(Hex(0, 1).distance(Hex(-1,1)))
 
 class LandHex:
     def __init__(self, hex):
@@ -80,59 +87,110 @@ class LandHex:
         return "{},{}".format(self.hex.r, self.hex.q)
 
 
-class TrackSegment:
-    def __init__(self, land, dir):
+class Track:
+    """A track on some land that goes between edges."""
+
+    def __init__(self, land, length):
         self.land = land
-        self.dir = dir
-        self.inside_neighbours = set()
-        self.outside_neighbours = set()
+        self.length = length
 
-        #debug:
-        self.had_car = False
+    def leave(self, car):
+        pass
 
-    def neighbours(self, dir):
-        return self.outside_neighbours if dir > 0 else self.inside_neighbours
+    def enter(self, car):
+        pass
+
+class Track2(Track):
+    """A Track with two ends."""
+
+    def __init__(self, land, length, start_dir, end_dir):
+        super().__init__(land, length)
+
+        self.start = start_dir
+        self.end = end_dir
+
+        self.start_neighbours = set()
+        self.end_neighbours = set()
+
+        self.cars = set()
+
+    @staticmethod
+    def make(land, dir1, dir2):
+        if dir1 == dir2.scaled(-1):
+            return StraightTrack(land, dir1)
+        elif dir1.distance(dir2) == 2:
+            return CurvedTrack(land, dir1, dir2)
+        else:
+            raise ValueError("cannot create 2track between given directions")
+
+    def enter(self, car, dir, dist):
+        self.cars.add(car)
+        car.track = self
+        if dir == self.start:
+            car.track_facing = 1
+            car.track_pos = 0
+        elif dir == self.end:
+            car.track_facing = -1
+            car.track_pos = self.length
+        else:
+            raise ValueError("could not add car to track because track doesn't go to given direction")
+
+        if dist > 0:
+            self.move_car(car, dist)
+
+    def move_car(self, car, dist):
+        """Move a car along the track."""
+
+        car.track_pos += dist * car.track_facing
+
+        # Move to the next track segment if needed.
+        if car.track_pos > self.length:
+            next_segment = car.choose_next_track(self.end_neighbours)
+            next_segment.enter(car, self.end.scaled(-1), car.track_pos - self.length)
+            self.leave(car)
+
+        if car.track_pos < 0:
+            next_segment = car.choose_next_track(self.start_neighbours)
+            next_segment.enter(car, self.end.scaled(-1), -car.track_pos)
+            self.leave(car)
+
+
+class StraightTrack(Track2):
+    """Track that goes from one edge to the oposite edge.
+    
+    Length is 1 by definition."""
+    def __init__(self, land, dir1):
+        super().__init__(land, 1.0, dir1, dir1.scaled(-1))
+
+class CurvedTrack(Track2):
+    """Track that goes from one edge to an edge two spots away."""
+
+    def __init__(self, land, dir1, dir2):
+        super().__init__(land, 0.90689968211, dir1, dir2)
+
+        self.arc_center_dir = None
+        for d in Hex.directions:
+            if close_enough(d.distance(self.start), 1) and close_enough(d.distance(self.end), 1):
+                self.arc_center_dir = d
+                break
+
+        print("start: {}\narc: {}\nend: {}".format(self.start, self.arc_center_dir, self.end))
+
+        if not self.arc_center_dir:
+            raise ValueError("dir1 and dir2 are not two hexes from oneanother")
 
 
 class TrainCar:
-    def __init__(self, track):
-        self.track_segment = track
-        self.track_facing = 1
-        self.track_pos = 0.0
+    def __init__(self):
+        self.track = None
         self.speed = 0.1
 
     def do_step(self):
-        self.do_move()
+        if self.track:
+            self.track.move_car(self, self.speed)
 
-    def do_move(self):
-        """Move along the track."""
-        if not self.track_segment: return
-
-        self.track_pos += self.speed * self.track_facing
-
-        # Move to the next track segment if needed.
-        if self.track_pos > 1.0:
-            try:
-                next_segment = next(iter(self.track_segment.outside_neighbours))
-                self.track_segment = next_segment
-                self.track_facing = -self.track_facing
-                self.track_pos = 2.0 - self.track_pos
-            except StopIteration:
-                # Fallen off the end of the track!
-                print("fallen off track")
-                self.track_segment = None
-
-        if self.track_pos < 0.0:
-            try:
-                next_segment = next(iter(self.track_segment.inside_neighbours))
-                self.track_segment = next_segment
-                self.track_facing = -self.track_facing
-                self.track_pos = -self.track_pos
-            except StopIteration:
-                # reached the end of the line
-                print("end of the line")
-                self.track_pos = 0.0
-                self.speed = 0.0
+    def choose_next_track(self, tracks):
+        return next(iter(tracks))
 
 
 class Landscape:
@@ -143,6 +201,8 @@ class Landscape:
         self.radius = radius
         self.hexes = None
         self.land = None
+
+        self.trains = []
 
         self.init()
 
@@ -159,32 +219,31 @@ class Landscape:
         rand = random.Random()
         rand.seed(self.seed)
         land = self.land[Hex(0, 0)]
-        dir = None
-        last_segment = None
+        start_dir = Hex.directions[0]
+        last_track = None
         while land:
-            # Add track back to previous hex
-            backward_segment = None
-            if dir:
-                backward_segment = TrackSegment(land, dir.scaled(-1))
-                if last_segment:
-                    backward_segment.outside_neighbours.add(last_segment)
-                    last_segment.outside_neighbours.add(backward_segment)
-                land.tracks.add(backward_segment)
+            print("Track through {}".format(land.hex))
 
-            # Choose new direction and add tracks forward
-            dir = rand.choice(Hex.directions) # TODO make sure the turns aren't too tight.
-            forward_segment = TrackSegment(land, dir)
-            if backward_segment:
-                forward_segment.inside_neighbours.add(backward_segment)
-                backward_segment.inside_neighbours.add(forward_segment)
-            land.tracks.add(forward_segment)
+            end_dir = rand.choice([d for d in Hex.directions if start_dir.distance(d) > 1])
+            track = Track2.make(land, start_dir, end_dir)
+            land.tracks.add(track)
 
-            last_segment = forward_segment
-            land = self.land.get(land.hex.add(dir))
+            if last_track:
+                last_track.end_neighbours.add(track)
+                track.start_neighbours.add(last_track)
 
+            last_track = track
+            land = self.land.get(land.hex.add(end_dir))
+            start_dir = end_dir.scaled(-1)
+
+        # Put a train on the track
+        track = next(iter(self.land[(0, 0)].tracks))
+        self.trains.append(TrainCar())
+        track.enter(self.trains[0], track.start, 0)
 
     def do_step(self):
-        pass
+        for car in self.trains:
+            car.do_step()
 
     def scan_land(self):
         """Return lands in scanline order."""

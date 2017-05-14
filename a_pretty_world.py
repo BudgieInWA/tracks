@@ -42,8 +42,8 @@ FONT = pygame.font.SysFont("sans-serif", 24)
 
 #useful game dimensions
 
-RADIUS = 2 
-TILESIZE  = 128
+RADIUS = 5 
+TILESIZE  = 32
 MAPWIDTH  = (4 * RADIUS + 1) * TILESIZE
 MAPHEIGHT = (4 * RADIUS)     * TILESIZE
 
@@ -55,10 +55,8 @@ pygame.init()
 DISPLAYSURF = pygame.display.set_mode((MAPWIDTH, MAPHEIGHT))
 
 # setup hexworld
-landscape = Landscape(radius=RADIUS, seed=420)
+landscape = Landscape(radius=RADIUS, seed=1)
 #landscape.land[(0,0)].water = 20
-train_cars = [TrainCar(next(iter(landscape.land[(0, 0)].tracks)))]
-
 
 clock = pygame.time.Clock()
 step = 0
@@ -74,67 +72,6 @@ while True:
             #and the game and close the window
             pygame.quit()
             sys.exit()
-
-
-    # Advance the game state.
-    # TODO only advance the game state if we've passed a tick threshold
-    landscape.do_step()
-    for t in train_cars:
-        t.do_step()
-
-
-    # Debug: mark tracks that have cars on them
-    for car in train_cars:
-        if car.track_segment:
-            car.track_segment.had_car = True
-
-    # Refresh the canvas
-    DISPLAYSURF.fill((20, 20, 20))
-
-    # Draw Landscape.
-    for land in landscape.scan_land():
-        colour = BROWN
-
-        center = hex_to_pixel(layout, land.hex).rounded()
-
-        # draw bg
-        pygame.draw.circle(
-                DISPLAYSURF,
-                colour,
-                center,
-                int(TILESIZE/1.2),
-                0)
-
-        # draw tracks
-        for track in land.tracks:
-            target_pos = hex_to_pixel(layout, land.hex.add(track.dir))
-            line_end = Point((center.x + target_pos.x) / 2, (center.y + target_pos.y) / 2).rounded()
-
-            track.xy_center = pygame.math.Vector2(center)
-            track.xy_vector = pygame.math.Vector2(line_end) - track.xy_center
-
-            pygame.draw.line(
-                    DISPLAYSURF,
-                    BLUE if track.had_car else WHITE,
-                    center,
-                    line_end,
-                    10)
-
-        if False:
-            label = FONT.render(str(land.hex), False, WHITE)
-            DISPLAYSURF.blit(label, pygame.math.Vector2(p) - (label.get_width()/2, label.get_height()/2))
-
-    # draw train cars
-    for car in train_cars:
-        if car.track_segment:
-            car_xy = car.track_segment.xy_center + car.track_segment.xy_vector * car.track_pos
-            pygame.draw.circle(
-                    DISPLAYSURF,
-                    RED,
-                    Point(*car_xy).rounded(),
-                    int(TILESIZE / 5),
-                    0)
-
 
     # Find out what the mouse is pointing at.
     mouse_xy_pos = pygame.mouse.get_pos()
@@ -153,6 +90,95 @@ while True:
     d[mi] = sign
     d[(mi+1) % 3] = -sign
     mouse_dir = Hex(*d)
+
+    # Advance the game state.
+    # TODO only advance the game state if we've passed a tick threshold
+    try:
+        landscape.do_step()
+    except:
+        pass
+
+    # Refresh the canvas
+    DISPLAYSURF.fill((20, 20, 20))
+    
+    # Draw Landscape.
+    for land in landscape.scan_land():
+        selected = False
+        if land.hex.r == mouse_hex.r and land.hex.q == mouse_hex.q:
+            selected = True
+        colour = BROWN.scaled(1.5) if selected else BROWN
+
+        center = hex_to_pixel(layout, land.hex).rounded()
+
+        # draw bg
+        pygame.draw.circle(
+                DISPLAYSURF,
+                colour,
+                center,
+                int(TILESIZE/1.2),
+                0)
+
+        # draw tracks
+        for track in land.tracks:
+            if isinstance(track, StraightTrack):
+                start_target_pos = hex_to_pixel(layout, land.hex.add(track.start))
+                start_pos = Point((center.x + start_target_pos.x) / 2, (center.y + start_target_pos.y) / 2).rounded()
+                end_target_pos = hex_to_pixel(layout, land.hex.add(track.end))
+                end_pos = Point((center.x + end_target_pos.x) / 2, (center.y + end_target_pos.y) / 2).rounded()
+
+                track.xy_start = pygame.math.Vector2(start_pos)
+                track.xy_vector = pygame.math.Vector2(end_pos) - pygame.math.Vector2(start_pos)
+
+                pygame.draw.line(
+                        DISPLAYSURF,
+                        WHITE,
+                        start_pos,
+                        end_pos,
+                        10)
+
+            elif isinstance(track, CurvedTrack):
+                arc_center = hex_to_pixel(layout, land.hex.add(track.arc_center_dir)).rounded()
+                track.xy_arc_center = arc_center
+                angle_to_hex_center = -pygame.math.Vector2(1, 0).angle_to(pygame.math.Vector2(center) - pygame.math.Vector2(arc_center))
+                print(land.hex, angle_to_hex_center)
+                track.xy_start_angle = (angle_to_hex_center - 29) * math.pi / 180.0 # TODO figure out order
+                track.xy_end_angle = (angle_to_hex_center + 31) * math.pi / 180.0
+
+                R = TILESIZE * 1.5
+                pygame.draw.arc(
+                        DISPLAYSURF,
+                        BLUE if selected else WHITE,
+                        [arc_center.x - R, arc_center.y - R, R * 2, R * 2],
+                        track.xy_start_angle,
+                        track.xy_end_angle,
+                        3)
+
+
+        if False:
+            label = FONT.render(str(land.hex), False, WHITE)
+            DISPLAYSURF.blit(label, pygame.math.Vector2(p) - (label.get_width()/2, label.get_height()/2))
+
+    # draw train cars
+    for car in landscape.trains:
+        if car.track:
+            if isinstance(car.track, StraightTrack):
+                car_xy = car.track.xy_start + car.track.xy_vector * car.track_pos
+                pygame.draw.circle(
+                        DISPLAYSURF,
+                        RED,
+                        Point(*car_xy).rounded(),
+                        int(TILESIZE / 5),
+                        0)
+
+            elif isinstance(car.track, CurvedTrack):
+                pygame.draw.circle(
+                        DISPLAYSURF,
+                        RED,
+                        Point(*car.track.xy_arc_center).rounded(),
+                        int(TILESIZE / 5),
+                        1)
+
+
 
     label = FONT.render("{}, {}, {}".format(*(round(x, 2) for x in mouse_hex)), False, WHITE)
     DISPLAYSURF.blit(label, (0, 0))
