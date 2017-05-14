@@ -88,6 +88,9 @@ while True:
         if car.track_segment:
             car.track_segment.had_car = True
 
+    # Refresh the canvas
+    DISPLAYSURF.fill((20, 20, 20))
+
     # Draw Landscape.
     for land in landscape.scan_land():
         colour = BROWN
@@ -131,6 +134,43 @@ while True:
                     Point(*car_xy).rounded(),
                     int(TILESIZE / 5),
                     0)
+
+
+    # Find out what the mouse is pointing at.
+    mouse_xy_pos = pygame.mouse.get_pos()
+    mouse_hex_pos = pixel_to_hex(layout, Point(*mouse_xy_pos))
+    mouse_hex = hex_round(mouse_hex_pos)
+    off = Hex(mouse_hex_pos.r - mouse_hex.r, mouse_hex_pos.q - mouse_hex.q, mouse_hex_pos.s - mouse_hex.s)
+    diff = (off.r - off.q, off.q - off.s, off.s - off.r)
+    m = -1.0
+    mi = None
+    for i in range(len(diff)):
+        if abs(diff[i]) > m:
+            m = abs(diff[i])
+            mi = i
+    d = [0, 0, 0]
+    sign = 1 if diff[mi] > 0 else -1
+    d[mi] = sign
+    d[(mi+1) % 3] = -sign
+    mouse_dir = Hex(*d)
+
+    label = FONT.render("{}, {}, {}".format(*(round(x, 2) for x in mouse_hex)), False, WHITE)
+    DISPLAYSURF.blit(label, (0, 0))
+
+    selected_hex_pos = Point(*hex_to_pixel(layout, mouse_hex)).rounded()
+    pygame.draw.line(
+            DISPLAYSURF,
+            BLACK,
+            selected_hex_pos,
+            Point(*hex_to_pixel(layout, hex_add(mouse_hex, mouse_dir))).rounded(),
+            3)
+    pygame.draw.circle(
+            DISPLAYSURF,
+            BLACK,
+            selected_hex_pos,
+            round(TILESIZE/5),
+            0)
+
 
     # Update the display.
     pygame.display.update()
