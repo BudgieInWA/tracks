@@ -120,10 +120,23 @@ class Track2(Track):
     def make(land, dir1, dir2):
         if dir1 == dir2.scaled(-1):
             return StraightTrack(land, dir1)
-        elif dir1.distance(dir2) == 2:
+        elif close_enough(dir1.distance(dir2), 2):
             return CurvedTrack(land, dir1, dir2)
         else:
-            raise ValueError("cannot create 2track between given directions")
+            raise ValueError("Cannot create 2track on land {} between directions {} and {}".format(land, dir1, dir2))
+
+    def connecting_dirs(self):
+        return [self.start, self.end]
+
+    def add_neighbour(self, track, dir):
+        if dir == self.start:
+            self.start_neighbours.add(track)
+            return True
+        elif dir == self.end:
+            self.end_neighbours.add(track)
+            return True
+        else:
+            return False
 
     def enter(self, car, dir, dist):
         self.cars.add(car)
@@ -139,6 +152,9 @@ class Track2(Track):
 
         if dist > 0:
             self.move_car(car, dist)
+
+    def leave(self, car):
+        self.cars.remove(car)
 
     def move_car(self, car, dist):
         """Move a car along the track."""
@@ -211,6 +227,8 @@ class Landscape:
 
         self.trains = []
 
+        self.build_path = None
+
         self.init()
 
     def init(self):
@@ -222,6 +240,7 @@ class Landscape:
         for l in self.land.values():
             l.neighbours = [self.land[n] for n in l.hex.neighbours() if n in self.land]
 
+        """
         # Generate some random tracks starting in the middle.
         rand = random.Random()
         rand.seed(self.seed)
@@ -248,6 +267,7 @@ class Landscape:
         track = next(iter(self.land[(0, 0)].tracks))
         self.trains.append(TrainCar())
         track.enter(self.trains[0], track.start, 0)
+        """
 
     def do_step(self):
         for car in self.trains:
@@ -297,7 +317,46 @@ class Landscape:
 
     def build_track_end(self):
         print("ending build track")
-        pass
+        from_dir = None
+        for i in range(len(self.build_path)):
+            hex = self.build_path[i]
+            land = self.land[hex]
+
+            self.dehighlight(hex)
+
+            if i + 1 < len(self.build_path):
+                to_dir = self.build_path[i + 1].subtract(hex)
+            elif from_dir:
+                to_dir = from_dir.scaled(-1)
+            else:
+                # first and last hex, skip building
+                break
+
+            if not from_dir:
+                from_dir = to_dir.scaled(-1)
+            
+            track = Track2.make(land, from_dir, to_dir)
+            self.build(hex, track)
+
+            from_dir = to_dir.scaled(-1)
+
+        self.build_path = None
+
+    def build(self, hex, building):
+        if isinstance(building, Track):
+            self.land[hex].tracks.add(building)
+
+            # Connect the track to adjacent tracks.
+            for d in building.connecting_dirs():
+                n = self.land.get(hex.add(d))
+                if n:
+                    for t in n.tracks:
+                        if t.add_neighbour(building, d.scaled(-1)):
+                            building.add_neighbour(t, d)
+
+
+            # TODO fix collisions with other tracks
+
 
     def scan_land(self):
         """Return lands in scanline order."""
