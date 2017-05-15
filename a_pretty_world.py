@@ -42,20 +42,22 @@ FONT = pygame.font.SysFont("sans-serif", 24)
 
 #useful game dimensions
 
-RADIUS = 5 
-TILESIZE  = 32
+RADIUS = 3 
+TILESIZE  = 100
 MAPWIDTH  = (4 * RADIUS + 1) * TILESIZE
 MAPHEIGHT = (4 * RADIUS)     * TILESIZE
 
 layout = Layout(orientation=layout_pointy, size=Point(TILESIZE, TILESIZE),
         origin=Point(MAPWIDTH/2, MAPHEIGHT/2))
 
+TRACK_WIDTH = int(TILESIZE / 5)
+
 #set up the display
 pygame.init()
 DISPLAYSURF = pygame.display.set_mode((MAPWIDTH, MAPHEIGHT))
 
 # setup hexworld
-landscape = Landscape(radius=RADIUS, seed=1)
+landscape = Landscape(radius=RADIUS, seed=420)
 #landscape.land[(0,0)].water = 20
 
 clock = pygame.time.Clock()
@@ -134,24 +136,23 @@ while True:
                         WHITE,
                         start_pos,
                         end_pos,
-                        10)
+                        TRACK_WIDTH)
 
             elif isinstance(track, CurvedTrack):
                 arc_center = hex_to_pixel(layout, land.hex.add(track.arc_center_dir)).rounded()
                 track.xy_arc_center = arc_center
                 angle_to_hex_center = -pygame.math.Vector2(1, 0).angle_to(pygame.math.Vector2(center) - pygame.math.Vector2(arc_center))
-                print(land.hex, angle_to_hex_center)
                 track.xy_start_angle = (angle_to_hex_center - 29) * math.pi / 180.0 # TODO figure out order
                 track.xy_end_angle = (angle_to_hex_center + 31) * math.pi / 180.0
-
                 R = TILESIZE * 1.5
+
                 pygame.draw.arc(
                         DISPLAYSURF,
                         BLUE if selected else WHITE,
-                        [arc_center.x - R, arc_center.y - R, R * 2, R * 2],
+                        [arc_center.x - R - TRACK_WIDTH/2, arc_center.y - R - TRACK_WIDTH/2, R * 2 + TRACK_WIDTH, R * 2 + TRACK_WIDTH],
                         track.xy_start_angle,
                         track.xy_end_angle,
-                        3)
+                        TRACK_WIDTH)
 
 
         if False:
@@ -171,13 +172,22 @@ while True:
                         0)
 
             elif isinstance(car.track, CurvedTrack):
+                R = TILESIZE * 1.5
+                angle_diff = car.track_pos
+                if car.track_facing < 0:
+                    angle_diff = car.track.length - angle_diff
+                angle = car.track.xy_start_angle + angle_diff
+                if car.track.angle_dir < 1:
+                    angle = car.track.xy_end_angle - angle_diff
+                car_x = car.track.xy_arc_center.x + math.cos(-angle) * R
+                car_y = car.track.xy_arc_center.y + math.sin(-angle) * R
+
                 pygame.draw.circle(
                         DISPLAYSURF,
                         RED,
-                        Point(*car.track.xy_arc_center).rounded(),
+                        Point(car_x, car_y).rounded(),
                         int(TILESIZE / 5),
                         1)
-
 
 
     label = FONT.render("{}, {}, {}".format(*(round(x, 2) for x in mouse_hex)), False, WHITE)

@@ -70,7 +70,8 @@ class Hex(namedtuple('Hex', ['r', 'q'])):
     def __str__(self):
         return "{},{}".format(self.r, self.q)
 
-Hex.directions = [Hex(1, 0), Hex(-1, 1), Hex(0, -1), Hex(-1, 0), Hex(1, -1), Hex(0, +1)]
+Hex.directions = [Hex(1, 0), Hex(1, -1), Hex(0, -1), Hex(-1, 0), Hex(-1, 1), Hex(0, 1)]
+Hex.direction_id = dict((Hex.directions[i], i) for i in range(len(Hex.directions)))
 
 print(Hex(1, 0).distance(Hex(-1,1)))
 print(Hex(0, 1).distance(Hex(-1,1)))
@@ -81,7 +82,6 @@ class LandHex:
         self.neighbours = None # needs to be filled in for us
 
         self.tracks = set() 
-
 
     def __str__(self):
         return "{},{}".format(self.hex.r, self.hex.q)
@@ -165,25 +165,30 @@ class StraightTrack(Track2):
 class CurvedTrack(Track2):
     """Track that goes from one edge to an edge two spots away."""
 
-    def __init__(self, land, dir1, dir2):
-        super().__init__(land, 0.90689968211, dir1, dir2)
+    def __init__(self, land, start_dir, end_dir):
+        super().__init__(land, 0.90689968211, start_dir, end_dir)
 
         self.arc_center_dir = None
-        for d in Hex.directions:
-            if close_enough(d.distance(self.start), 1) and close_enough(d.distance(self.end), 1):
-                self.arc_center_dir = d
-                break
+        start_dir_id = Hex.direction_id[start_dir]
+        end_dir_id = Hex.direction_id[end_dir]
+        print(start_dir_id, end_dir_id)
+        if (start_dir_id + 2) % len(Hex.directions) == end_dir_id:
+            self.angle_dir = 1
+            self.arc_center_dir = Hex.directions[(start_dir_id + 1) % len(Hex.directions)]
+        elif (end_dir_id + 2) % len(Hex.directions) == start_dir_id:
+            self.angle_dir = -1
+            self.arc_center_dir = Hex.directions[(end_dir_id + 1) % len(Hex.directions)]
+        else:
+            raise ValueError("start_dir and end_dir are not two hexes from oneanother")
 
-        print("start: {}\narc: {}\nend: {}".format(self.start, self.arc_center_dir, self.end))
+        print("start: {}\narc: {} ({})\nend: {}".format(self.start, self.arc_center_dir, self.angle_dir, self.end))
 
-        if not self.arc_center_dir:
-            raise ValueError("dir1 and dir2 are not two hexes from oneanother")
 
 
 class TrainCar:
     def __init__(self):
         self.track = None
-        self.speed = 0.1
+        self.speed = 0.05
 
     def do_step(self):
         if self.track:
@@ -224,7 +229,8 @@ class Landscape:
         while land:
             print("Track through {}".format(land.hex))
 
-            end_dir = rand.choice([d for d in Hex.directions if start_dir.distance(d) > 1])
+            dir_id = Hex.direction_id[start_dir.scaled(-1)]
+            end_dir = rand.choice([Hex.directions[dir_id], Hex.directions[(dir_id+1)%6], Hex.directions[(dir_id-1)%6]])
             track = Track2.make(land, start_dir, end_dir)
             land.tracks.add(track)
 
