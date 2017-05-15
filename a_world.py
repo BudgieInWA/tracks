@@ -251,6 +251,11 @@ class Landscape:
         for car in self.trains:
             car.do_step()
 
+
+    def start_build(self, hex):
+        pass
+
+
     def scan_land(self):
         """Return lands in scanline order."""
         return (self.land[h] for h in self.hexes)
