@@ -46,7 +46,8 @@ FONT = pygame.font.SysFont("sans-serif", 24)
 #useful game dimensions
 
 RADIUS = 3 
-TILESIZE  = 100
+TILESIZE  = 100 # outer hex radius
+WIDTH_HEIGHT_RATIO = 0.86602540378 # ratio between outer radius and inner radius
 MAPWIDTH  = (4 * RADIUS + 1) * TILESIZE
 MAPHEIGHT = (4 * RADIUS)     * TILESIZE
 
@@ -66,17 +67,11 @@ landscape = Landscape(radius=RADIUS, seed=420)
 clock = pygame.time.Clock()
 step = 0
 
+currently_building = False
+
 # Event Loop
 while True:
     clock.tick(FPS)
-
-    # Get all the user events
-    for event in pygame.event.get():
-        #if the user wants to quit
-        if event.type == QUIT:
-            #and the game and close the window
-            pygame.quit()
-            sys.exit()
 
     # Find out what the mouse is pointing at.
     mouse_xy_pos = pygame.mouse.get_pos()
@@ -97,12 +92,34 @@ while True:
     d[(mi+1) % 3] = -sign
     mouse_dir = hexgrid.Hex(*d)
 
+    # Get all the user events
+    for event in pygame.event.get():
+        #if the user wants to quit
+        if event.type == QUIT:
+            #and the game and close the window
+            pygame.quit()
+            sys.exit()
+
+        # left click
+        if event.type == MOUSEBUTTONDOWN and event.button == 1:
+            if currently_building:
+                landscape.build_track_end()
+                currently_building = False
+            else:
+                landscape.build_track_start()
+                currently_building = True
+
+    if currently_building:
+        landscape.build_track_select_hex(mouse_hex)
+    
+
     # Advance the game state.
     # TODO only advance the game state if we've passed a tick threshold
     try:
         landscape.do_step()
     except:
         pass
+
 
     # Refresh the canvas
     DISPLAYSURF.fill((20, 20, 20))
@@ -121,7 +138,7 @@ while True:
                 DISPLAYSURF,
                 colour,
                 center,
-                int(TILESIZE/1.2),
+                int(TILESIZE * WIDTH_HEIGHT_RATIO),
                 0)
 
         # draw tracks
@@ -158,6 +175,14 @@ while True:
                         track.xy_end_angle,
                         TRACK_WIDTH)
 
+
+        if land.highlighted:
+            pygame.draw.circle(
+                    DISPLAYSURF,
+                    GREEN,
+                    center,
+                    int(TILESIZE * 0.5),
+                    land.highlighted)
 
         if False:
             label = FONT.render(str(land.hex), False, WHITE)

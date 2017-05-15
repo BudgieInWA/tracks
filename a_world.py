@@ -83,6 +83,8 @@ class LandHex:
 
         self.tracks = set() 
 
+        self.highlighted = 0
+
     def __str__(self):
         return "{},{}".format(self.hex.r, self.hex.q)
 
@@ -252,9 +254,50 @@ class Landscape:
             car.do_step()
 
 
-    def start_build(self, hex):
-        pass
+    def highlight(self, hex):
+        self.land[hex].highlighted += 1
+    def dehighlight(self, hex):
+        self.land[hex].highlighted -= 1
 
+    def build_track_start(self):
+        print("starting build track")
+        self.build_path = []
+
+    def build_track_select_hex(self, hex):
+        p = self.build_path
+
+        if not self.land[hex]:
+            return
+
+        elif len(p) == 0:
+            p.append(hex)
+            self.highlight(hex)
+
+        # Check if the latest hex is still selected
+        elif hex == p[len(p) - 1]:
+            pass
+
+        # Check for backtracking to shorten the path.
+        elif len(p) > 1 and hex == p[len(p) - 2]:
+            self.dehighlight(p.pop())
+
+        # Simple adding of one hex.
+        elif close_enough(hex.distance(p[len(p) - 1]), 1):
+            # Check that the turn is not too sharp.
+            while len(p) > 1:
+                if close_enough(hex.distance(p[len(p) - 2]), 1):
+                    self.dehighlight(p.pop())
+                else:
+                    break
+            p.append(hex)
+            self.highlight(hex)
+
+        else:
+            raise ValueError("Cannot select hexes far away while building")
+
+    def build_track_end(self):
+        print("ending build track")
+        pass
 
     def scan_land(self):
         """Return lands in scanline order."""
