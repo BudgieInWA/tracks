@@ -69,9 +69,14 @@ step = 0
 
 currently_building = False
 
+vomit = False
+
 # Event Loop
 while True:
     clock.tick(FPS)
+
+    if vomit:
+        print("=============================")
 
     # Find out what the mouse is pointing at.
     mouse_xy_pos = pygame.mouse.get_pos()
@@ -109,6 +114,14 @@ while True:
                 landscape.build_track_start()
                 currently_building = True
 
+        if event.type == KEYDOWN and event.key == K_i:
+            print("Mouse at {}".format(mouse_hex))
+            land = landscape.land.get(mouse_hex)
+            if not land: continue
+            print("land {}".format(land))
+
+
+
     if currently_building:
         landscape.build_track_select_hex(mouse_hex)
     
@@ -117,8 +130,8 @@ while True:
     # TODO only advance the game state if we've passed a tick threshold
     try:
         landscape.do_step()
-    except:
-        pass
+    except BaseException as e:
+        print(e)
 
 
     # Refresh the canvas
@@ -174,6 +187,15 @@ while True:
                         track.xy_start_angle,
                         track.xy_end_angle,
                         TRACK_WIDTH)
+
+            if isinstance(track, Station):
+                R = TILESIZE * 0.3
+                pygame.draw.rect(
+                        DISPLAYSURF,
+                        WHITE,
+                        [center.x - R, center.y - R, 2 * R, 2 * R],
+                        0)
+
 
 
         if land.highlighted:

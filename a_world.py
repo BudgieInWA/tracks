@@ -73,8 +73,6 @@ class Hex(namedtuple('Hex', ['r', 'q'])):
 Hex.directions = [Hex(1, 0), Hex(1, -1), Hex(0, -1), Hex(-1, 0), Hex(-1, 1), Hex(0, 1)]
 Hex.direction_id = dict((Hex.directions[i], i) for i in range(len(Hex.directions)))
 
-print(Hex(1, 0).distance(Hex(-1,1)))
-print(Hex(0, 1).distance(Hex(-1,1)))
 
 class LandHex:
     def __init__(self, hex):
@@ -117,7 +115,9 @@ class Track2(Track):
         self.cars = set()
 
     @staticmethod
-    def make(land, dir1, dir2):
+    def make(land, dir1, dir2=None):
+        if not dir2:
+            return Station(land, dir1)
         if dir1 == dir2.scaled(-1):
             return StraightTrack(land, dir1)
         elif close_enough(dir1.distance(dir2), 2):
@@ -180,6 +180,7 @@ class StraightTrack(Track2):
     def __init__(self, land, dir1):
         super().__init__(land, 1.0, dir1, dir1.scaled(-1))
 
+
 class CurvedTrack(Track2):
     """Track that goes from one edge to an edge two spots away."""
 
@@ -189,7 +190,6 @@ class CurvedTrack(Track2):
         self.arc_center_dir = None
         start_dir_id = Hex.direction_id[start_dir]
         end_dir_id = Hex.direction_id[end_dir]
-        print(start_dir_id, end_dir_id)
         if (start_dir_id + 2) % len(Hex.directions) == end_dir_id:
             self.angle_dir = 1
             self.arc_center_dir = Hex.directions[(start_dir_id + 1) % len(Hex.directions)]
@@ -199,18 +199,30 @@ class CurvedTrack(Track2):
         else:
             raise ValueError("start_dir and end_dir are not two hexes from oneanother")
 
-        print("start: {}\narc: {} ({})\nend: {}".format(self.start, self.arc_center_dir, self.angle_dir, self.end))
 
+
+class Station(StraightTrack):
+    pass
 
 
 class TrainCar:
     def __init__(self):
         self.track = None
+        self.track_pos = None
+        self.track_facing = None
         self.speed = 0.05
+
+        self.last_station = None
 
     def do_step(self):
         if self.track:
-            self.track.move_car(self, self.speed)
+            if (isinstance(self.track, Station) and self.track is not self.last_station and
+                    self.track_pos > self.track.length * 0.3 and
+                    self.track_pos < self.track.length * 0.7):
+                self.track_facing *= -1;
+                self.last_station = self.track
+            else:
+                self.track.move_car(self, self.speed)
 
     def choose_next_track(self, tracks):
         return next(iter(tracks))
@@ -316,7 +328,9 @@ class Landscape:
             raise ValueError("Cannot select hexes far away while building")
 
     def build_track_end(self):
-        print("ending build track")
+        if len(self.build_path) == 1:
+            return
+
         from_dir = None
         for i in range(len(self.build_path)):
             hex = self.build_path[i]
@@ -324,23 +338,27 @@ class Landscape:
 
             self.dehighlight(hex)
 
+            to_dir = None
             if i + 1 < len(self.build_path):
                 to_dir = self.build_path[i + 1].subtract(hex)
-            elif from_dir:
-                to_dir = from_dir.scaled(-1)
-            else:
-                # first and last hex, skip building
-                break
-
-            if not from_dir:
-                from_dir = to_dir.scaled(-1)
             
-            track = Track2.make(land, from_dir, to_dir)
+            if from_dir and to_dir:
+                track = Track2.make(land, from_dir, to_dir)
+            elif from_dir:
+                track = Track2.make(land, from_dir)
+            else:
+                track = Track2.make(land, to_dir)
+
             self.build(hex, track)
 
-            from_dir = to_dir.scaled(-1)
+            from_dir = to_dir.scaled(-1) if to_dir else None
+
+        train = TrainCar()
+        track.enter(train, track.start, 0)
+        self.trains.append(train)
 
         self.build_path = None
+
 
     def build(self, hex, building):
         if isinstance(building, Track):
