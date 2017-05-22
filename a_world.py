@@ -1,6 +1,7 @@
 import sys
 import random
 import time
+import itertools
 
 
 from collections import namedtuple 
@@ -83,8 +84,14 @@ class LandHex:
 
         self.highlighted = 0
 
-    def __str__(self):
-        return "{},{}".format(self.hex.r, self.hex.q)
+    def str(self, depth=0):
+        s = "LandHex at {}".format(self.hex)
+        if depth > 0:
+            kids = itertools.chain(self.tracks)
+            strs = ("\t" + k.str(depth=depth-1) for k in kids)
+            return s + "\n" + "\n".join(strs)
+        else:
+            return s
 
 
 class Track:
@@ -148,7 +155,8 @@ class Track2(Track):
             car.track_facing = -1
             car.track_pos = self.length
         else:
-            raise ValueError("could not add car to track because track doesn't go to given direction")
+            raise ValueError("could not add {car} to track because track doesn't go to direction {dir}"
+                    .format(car=car, dir=dir))
 
         if dist > 0:
             self.move_car(car, dist)
@@ -169,8 +177,11 @@ class Track2(Track):
 
         if car.track_pos < 0:
             next_segment = car.choose_next_track(self.start_neighbours)
-            next_segment.enter(car, self.end.scaled(-1), -car.track_pos)
+            next_segment.enter(car, self.start.scaled(-1), -car.track_pos)
             self.leave(car)
+
+    def str(self, depth=0):
+        return "2Track from {} to {}".format(self.start, self.end)
 
 
 class StraightTrack(Track2):
@@ -215,6 +226,9 @@ class TrainCar:
         self.last_station = None
 
     def do_step(self):
+        if False:
+            print("{}: {} {} {}".format(self, self.track, self.track_pos, self.track_facing))
+
         if self.track:
             if (isinstance(self.track, Station) and self.track is not self.last_station and
                     self.track_pos > self.track.length * 0.3 and
@@ -225,7 +239,7 @@ class TrainCar:
                 self.track.move_car(self, self.speed)
 
     def choose_next_track(self, tracks):
-        return next(iter(tracks))
+        return random.choice(list(tracks))
 
 
 class Landscape:

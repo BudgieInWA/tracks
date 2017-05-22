@@ -62,7 +62,6 @@ DISPLAYSURF = pygame.display.set_mode((MAPWIDTH, MAPHEIGHT))
 
 # setup hexworld
 landscape = Landscape(radius=RADIUS, seed=420)
-#landscape.land[(0,0)].water = 20
 
 clock = pygame.time.Clock()
 step = 0
@@ -118,8 +117,7 @@ while True:
             print("Mouse at {}".format(mouse_hex))
             land = landscape.land.get(mouse_hex)
             if not land: continue
-            print("land {}".format(land))
-
+            print(land.str(depth=1))
 
 
     if currently_building:
@@ -171,12 +169,18 @@ while True:
                         start_pos,
                         end_pos,
                         TRACK_WIDTH)
+                if vomit:
+                    pygame.draw.circle(
+                            DISPLAYSURF,
+                            WHITE,
+                            start_pos,
+                            TRACK_WIDTH)
 
             elif isinstance(track, CurvedTrack):
                 arc_center = hexgrid.hex_to_pixel(layout, land.hex.add(track.arc_center_dir)).rounded()
                 track.xy_arc_center = arc_center
                 angle_to_hex_center = -pygame.math.Vector2(1, 0).angle_to(pygame.math.Vector2(center) - pygame.math.Vector2(arc_center))
-                track.xy_start_angle = (angle_to_hex_center - 29) * math.pi / 180.0 # TODO figure out order
+                track.xy_start_angle = (angle_to_hex_center - 30) * math.pi / 180.0 # TODO figure out order
                 track.xy_end_angle = (angle_to_hex_center + 31) * math.pi / 180.0
                 R = TILESIZE * 1.5
 
@@ -212,12 +216,15 @@ while True:
 
     # draw train cars
     for car in landscape.trains:
+        if not hasattr(car, 'colour'):
+            car.colour = RGB(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
         if car.track:
             if isinstance(car.track, StraightTrack):
                 car_xy = car.track.xy_start + car.track.xy_vector * car.track_pos
                 pygame.draw.circle(
                         DISPLAYSURF,
-                        RED,
+                        car.colour,
                         Point(*car_xy).rounded(),
                         int(TILESIZE / 5),
                         0)
@@ -227,18 +234,19 @@ while True:
                 angle_diff = car.track_pos
                 if car.track_facing < 0:
                     angle_diff = car.track.length - angle_diff
-                angle = car.track.xy_start_angle + angle_diff
-                if car.track.angle_dir < 1:
+                if car.track.angle_dir * car.track_facing < 1:
                     angle = car.track.xy_end_angle - angle_diff
+                else:
+                    angle = car.track.xy_start_angle + angle_diff
                 car_x = car.track.xy_arc_center.x + math.cos(-angle) * R
                 car_y = car.track.xy_arc_center.y + math.sin(-angle) * R
 
                 pygame.draw.circle(
                         DISPLAYSURF,
-                        RED,
+                        car.colour,
                         Point(car_x, car_y).rounded(),
                         int(TILESIZE / 5),
-                        1)
+                        0)
 
 
     label = FONT.render("{}, {}, {}".format(*(round(x, 2) for x in mouse_hex_cubic)), False, WHITE)
