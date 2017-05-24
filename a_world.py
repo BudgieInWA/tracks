@@ -26,6 +26,12 @@ def close_enough(a, b):
     """Floating point rough eq fn"""
     return abs(a - b) < EPS
 
+def strs(ss, depth=0, kids=None):
+    if not depth or not kids:
+        return [ss]
+    else:
+        return [ss] + ["\t" + s for s in itertools.chain.from_iterable(k.strs(depth=depth-1) for k in kids)]
+
 class Hex(namedtuple('Hex', ['r', 'q'])):
 
     def add(self, other):
@@ -80,18 +86,21 @@ class LandHex:
         self.hex = hex
         self.neighbours = None # needs to be filled in for us
 
-        self.tracks = set() 
+        self.tracks = set() #TODO list instead
+        self.buildings = []
 
         self.highlighted = 0
 
-    def str(self, depth=0):
-        s = "LandHex at {}".format(self.hex)
-        if depth > 0:
-            kids = itertools.chain(self.tracks)
-            strs = ("\t" + k.str(depth=depth-1) for k in kids)
-            return s + "\n" + "\n".join(strs)
-        else:
-            return s
+    def do_step(self):
+        for b in self.buildings:
+            b.do_step()
+
+    def strs(self, depth=0):
+        return strs(self.__str__(), depth=depth, kids=itertools.chain(self.tracks, self.buildings))
+
+    def __str__(self):
+        return "LandHex at {}".format(self.hex)
+
 
 
 class Track:
@@ -180,7 +189,10 @@ class Track2(Track):
             next_segment.enter(car, self.start.scaled(-1), -car.track_pos)
             self.leave(car)
 
-    def str(self, depth=0):
+    def strs(self, depth=0):
+        return [self.__str__()]
+
+    def __str__(self):
         return "2Track from {} to {}".format(self.start, self.end)
 
 
@@ -213,7 +225,65 @@ class CurvedTrack(Track2):
 
 
 class Station(StraightTrack):
-    pass
+    def get_productions(self):
+        nested_productions = (b.get_productions() for b in self.land.buildings if isinstance(b, Producer))
+        return itertools.chain.from_iterable(nested_productions)
+
+
+class ResourceProduction:
+    def __init__(self, id, max=1.0, rate=0.1):
+        self.id = id
+        self.max = max
+        self.rate = rate
+        self.current = 0.0
+
+    def produce(self):
+        self.current += self.rate
+        self.current = min(self.max, self.current)
+
+    def do_step(self):
+        self.produce()
+
+    def full(self):
+        return self.current >= self.max
+
+    def collect(self, max=None):
+        """Collect the resource from the production."""
+
+        amount = min(self.current // 1, max or self.max)
+        self.current -= amount
+        return int(amount)
+
+    def strs(self, depth=0):
+        return [self.__str__()]
+
+    def __str__(self):
+        return "{} ({}/{} @ {})".format(self.id, self.current, self.max, self.rate)
+
+class Producer:
+    def __init__(self, resources):
+        self.resources = { r.id: r for r in resources }
+
+    def resource_ids(self):
+        return self.resources.keys()
+
+    def get_productions(self):
+        return self.resources.values()
+
+    def do_step(self):
+        for r in self.resources.values():
+            r.do_step()
+
+    def strs(self, depth=0):
+        return strs(self.__str__(), depth=0, kids=self.resources)
+
+    def __str__(self):
+        return "Producer of {}".format(", ".join(self.resource_ids()))
+        
+
+class Forest(Producer):
+    def __init__(self):
+        super().__init__([ResourceProduction('wood', max=10.0, rate=0.01)])
 
 
 class TrainCar:
@@ -224,6 +294,9 @@ class TrainCar:
         self.speed = 0.05
 
         self.last_station = None
+        self.cargo_type = None
+        self.cargo_max = 1.0
+        self.cargo_amount = 0.0
 
     def do_step(self):
         if False:
@@ -233,6 +306,9 @@ class TrainCar:
             if (isinstance(self.track, Station) and self.track is not self.last_station and
                     self.track_pos > self.track.length * 0.3 and
                     self.track_pos < self.track.length * 0.7):
+                # At a station.
+                if self.cargo_amount == 0.0:
+                    self.collect_from_station(self.track)
                 self.track_facing *= -1;
                 self.last_station = self.track
             else:
@@ -241,6 +317,13 @@ class TrainCar:
     def choose_next_track(self, tracks):
         return random.choice(list(tracks))
 
+    def collect_from_station(self, station):
+        for production in station.get_productions():
+            amount = production.collect(self.cargo_max)
+            if amount > 0.0:
+                self.cargo_type = production.id
+                self.cargo_amount = amount
+                return
 
 class Landscape:
     def __init__(self, seed=0, radius=3):
@@ -295,7 +378,11 @@ class Landscape:
         track.enter(self.trains[0], track.start, 0)
         """
 
+        self.build(Hex(2, 0), Forest())
+
     def do_step(self):
+        for land in self.land.values():
+            land.do_step()
         for car in self.trains:
             car.do_step()
 
@@ -388,6 +475,9 @@ class Landscape:
 
 
             # TODO fix collisions with other tracks
+
+        elif isinstance(building, Producer):
+            self.land[hex].buildings.append(building)
 
 
     def scan_land(self):

@@ -201,7 +201,12 @@ while True:
                         0)
 
 
+        # draw buildings
+        label = FONT.render("\n".join(str(b) for b in land.buildings), False, BLACK)
+        DISPLAYSURF.blit(label, pygame.math.Vector2(center) - (label.get_width()/2, label.get_height()/2))
 
+
+        # draw highlights
         if land.highlighted:
             pygame.draw.circle(
                     DISPLAYSURF,
@@ -220,14 +225,9 @@ while True:
             car.colour = RGB(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
 
         if car.track:
+            car_xy = None
             if isinstance(car.track, StraightTrack):
                 car_xy = car.track.xy_start + car.track.xy_vector * car.track_pos
-                pygame.draw.circle(
-                        DISPLAYSURF,
-                        car.colour,
-                        Point(*car_xy).rounded(),
-                        int(TILESIZE / 5),
-                        0)
 
             elif isinstance(car.track, CurvedTrack):
                 R = TILESIZE * 1.5
@@ -240,13 +240,19 @@ while True:
                     angle = car.track.xy_start_angle + angle_diff
                 car_x = car.track.xy_arc_center.x + math.cos(-angle) * R
                 car_y = car.track.xy_arc_center.y + math.sin(-angle) * R
+                car_xy = pygame.math.Vector2(car_x, car_y)
 
-                pygame.draw.circle(
-                        DISPLAYSURF,
-                        car.colour,
-                        Point(car_x, car_y).rounded(),
-                        int(TILESIZE / 5),
-                        0)
+        if car_xy:
+            pygame.draw.circle(
+                    DISPLAYSURF,
+                    car.colour,
+                    Point(*car_xy).rounded(),
+                    int(TILESIZE / 5),
+                    0)
+            if car.cargo_type:
+                label = FONT.render("{} {}".format(car.cargo_type, car.cargo_amount), False, BLACK)
+                DISPLAYSURF.blit(label, car_xy - (label.get_width()/2, label.get_height()/2))
+
 
 
     label = FONT.render("{}, {}, {}".format(*(round(x, 2) for x in mouse_hex_cubic)), False, WHITE)
