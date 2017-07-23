@@ -229,6 +229,8 @@ class Station(StraightTrack):
         nested_productions = (b.get_productions() for b in self.land.buildings if isinstance(b, Producer))
         return itertools.chain.from_iterable(nested_productions)
 
+    def get_consumers(self):
+        return (b for b in self.land.buildings if isinstance(b, Consumer))
 
 class ResourceProduction:
     def __init__(self, id, max=1.0, rate=0.1):
@@ -278,8 +280,36 @@ class Producer:
         return strs(self.__str__(), depth=0, kids=self.resources)
 
     def __str__(self):
-        return "Producer of {}".format(", ".join(self.resource_ids()))
+        return "Producer of {}".format(", ".join("{} ({:.1f})".format(r.id, r.current) for r in self.resources.values()))
         
+
+class Consumer:
+    def consume(self, resource, amount):
+        pass
+
+class AllPurposeShop(Consumer):
+    def __init__(self):
+        self.prices = {
+                "wood": 2.0,
+                }
+
+    def accepts(self, resource):
+        return resource in self.prices
+
+    def consume(self, resource, amount):
+        if resource in self.prices:
+            print("Sold {} {} for {}.".format(amount, resource, amount * self.prices[resource]))
+            return amount
+        else:
+            print("Cannot sell {}.".format(resource))
+            return 0.0
+
+    def do_step(self):
+        pass
+
+        
+    def __str__(self):
+        return "All Purpose Shop"
 
 class Forest(Producer):
     def __init__(self):
@@ -306,11 +336,23 @@ class TrainCar:
             if (isinstance(self.track, Station) and self.track is not self.last_station and
                     self.track_pos > self.track.length * 0.3 and
                     self.track_pos < self.track.length * 0.7):
-                # At a station.
+                # Arrived at a station.
+                station = self.track
+
+                if self.cargo_amount > 0.0:
+                    consumer = next((c for c in station.get_consumers() if c.accepts(self.cargo_type)), None)
+                    if consumer:
+                        self.cargo_amount -= consumer.consume(self.cargo_type, self.cargo_amount)
+                        if self.cargo_amount < 0.0:
+                            cargo_amount = 0.0
+                        if self.cargo_amount == 0.0:
+                            self.cargo_type = None
+
                 if self.cargo_amount == 0.0:
-                    self.collect_from_station(self.track)
+                    self.collect_from_station(station)
+
                 self.track_facing *= -1;
-                self.last_station = self.track
+                self.last_station = station
             else:
                 self.track.move_car(self, self.speed)
 
@@ -378,6 +420,7 @@ class Landscape:
         track.enter(self.trains[0], track.start, 0)
         """
 
+        self.build(Hex(0, 0), AllPurposeShop())
         self.build(Hex(2, 0), Forest())
 
     def do_step(self):
@@ -476,7 +519,8 @@ class Landscape:
 
             # TODO fix collisions with other tracks
 
-        elif isinstance(building, Producer):
+        
+        else:
             self.land[hex].buildings.append(building)
 
 
