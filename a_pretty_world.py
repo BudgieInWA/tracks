@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-import pygame, sys
-from pygame.locals import *
+import sys
 import collections
 import math
+import pygame
+from pygame.locals import *
+from Geometry import Point
 
 import hexgrid
-Point = hexgrid.Point
 
 from a_world import *
 
@@ -29,6 +30,9 @@ class RGB(collections.namedtuple("Colour", "r g b")):
 
     def scaled(self, k):
         return RGB(r=k*self.r, g=k*self.g, b=k*self.b)
+
+def pgp(point):
+    return [round(point.x), round(point.y)]
 
 FPS = 15
 
@@ -142,13 +146,13 @@ while True:
             selected = True
         colour = BROWN.scaled(1.5) if selected else BROWN
 
-        center = hexgrid.hex_to_pixel(layout, land.hex).rounded()
+        center = hexgrid.hex_to_pixel(layout, land.hex)
 
         # draw bg
         pygame.draw.circle(
                 DISPLAYSURF,
                 colour,
-                center,
+                pgp(center),
                 int(TILESIZE * WIDTH_HEIGHT_RATIO),
                 0)
 
@@ -156,28 +160,28 @@ while True:
         for track in land.tracks:
             if isinstance(track, StraightTrack):
                 start_target_pos = hexgrid.hex_to_pixel(layout, land.hex.add(track.start))
-                start_pos = Point((center.x + start_target_pos.x) / 2, (center.y + start_target_pos.y) / 2).rounded()
+                start_pos = Point((center.x + start_target_pos.x) / 2, (center.y + start_target_pos.y) / 2)
                 end_target_pos = hexgrid.hex_to_pixel(layout, land.hex.add(track.end))
-                end_pos = Point((center.x + end_target_pos.x) / 2, (center.y + end_target_pos.y) / 2).rounded()
+                end_pos = Point((center.x + end_target_pos.x) / 2, (center.y + end_target_pos.y) / 2)
 
-                track.xy_start = pygame.math.Vector2(start_pos)
-                track.xy_vector = pygame.math.Vector2(end_pos) - pygame.math.Vector2(start_pos)
+                track.xy_start = start_pos
+                track.xy_vector = end_pos - start_pos
 
                 pygame.draw.line(
                         DISPLAYSURF,
                         WHITE,
-                        start_pos,
-                        end_pos,
+                        pgp(start_pos),
+                        pgp(end_pos),
                         TRACK_WIDTH)
                 if vomit:
                     pygame.draw.circle(
                             DISPLAYSURF,
                             WHITE,
-                            start_pos,
+                            pgp(start_pos),
                             TRACK_WIDTH)
 
             elif isinstance(track, CurvedTrack):
-                arc_center = hexgrid.hex_to_pixel(layout, land.hex.add(track.arc_center_dir)).rounded()
+                arc_center = hexgrid.hex_to_pixel(layout, land.hex.add(track.arc_center_dir))
                 track.xy_arc_center = arc_center
                 angle_to_hex_center = -pygame.math.Vector2(1, 0).angle_to(pygame.math.Vector2(center) - pygame.math.Vector2(arc_center))
                 track.xy_start_angle = (angle_to_hex_center - 30) * math.pi / 180.0 # TODO figure out order
@@ -187,7 +191,8 @@ while True:
                 pygame.draw.arc(
                         DISPLAYSURF,
                         BLUE if selected else WHITE,
-                        [arc_center.x - R - TRACK_WIDTH/2, arc_center.y - R - TRACK_WIDTH/2, R * 2 + TRACK_WIDTH, R * 2 + TRACK_WIDTH],
+                        [round(arc_center.x - R - TRACK_WIDTH/2), round(arc_center.y - R -
+                            TRACK_WIDTH/2), R * 2 + TRACK_WIDTH, R * 2 + TRACK_WIDTH],
                         track.xy_start_angle,
                         track.xy_end_angle,
                         TRACK_WIDTH)
@@ -197,7 +202,7 @@ while True:
                 pygame.draw.rect(
                         DISPLAYSURF,
                         WHITE,
-                        [center.x - R, center.y - R, 2 * R, 2 * R],
+                        [round(center.x - R), round(center.y - R), 2 * R, 2 * R],
                         0)
 
 
@@ -211,7 +216,7 @@ while True:
             pygame.draw.circle(
                     DISPLAYSURF,
                     GREEN,
-                    center,
+                    pgp(center),
                     int(TILESIZE * 0.5),
                     land.highlighted)
 
@@ -242,28 +247,30 @@ while True:
                 car_y = car.track.xy_arc_center.y + math.sin(-angle) * R
                 car_xy = pygame.math.Vector2(car_x, car_y)
 
-        if car_xy:
-            pygame.draw.circle(
-                    DISPLAYSURF,
-                    car.colour,
-                    Point(*car_xy).rounded(),
-                    int(TILESIZE / 5),
-                    0)
-            if car.cargo_type:
-                label = FONT.render("{} {}".format(car.cargo_type, car.cargo_amount), False, BLACK)
-                DISPLAYSURF.blit(label, car_xy - (label.get_width()/2, label.get_height()/2))
+            if car_xy is not None:
+                pygame.draw.circle(
+                        DISPLAYSURF,
+                        car.colour,
+                        pgp(car_xy),
+                        int(TILESIZE / 5),
+                        0)
+                if car.cargo_type:
+                    label = FONT.render("{} {}".format(car.cargo_type, car.cargo_amount), False, BLACK)
+                    DISPLAYSURF.blit(label, car_xy - (label.get_width()/2, label.get_height()/2))
+            else:
+                print("not car_xy:", car_xy)
 
 
 
-    label = FONT.render("{}, {}, {}".format(*(round(x, 2) for x in mouse_hex_cubic)), False, WHITE)
+    label = FONT.render("({}, {}) in ({}, {}, {})".format(*mouse_xy_pos, *(round(x, 2) for x in mouse_hex_cubic)), False, WHITE)
     DISPLAYSURF.blit(label, (0, 0))
 
-    selected_hex_pos = Point(*hexgrid.hex_to_pixel(layout, mouse_hex_cubic)).rounded()
+    selected_hex_pos = pgp(Point(*hexgrid.hex_to_pixel(layout, mouse_hex_cubic)))
     pygame.draw.line(
             DISPLAYSURF,
             BLACK,
             selected_hex_pos,
-            Point(*hexgrid.hex_to_pixel(layout, hexgrid.hex_add(mouse_hex_cubic, mouse_dir))).rounded(),
+            pgp(Point(*hexgrid.hex_to_pixel(layout, hexgrid.hex_add(mouse_hex_cubic, mouse_dir)))),
             3)
     pygame.draw.circle(
             DISPLAYSURF,
