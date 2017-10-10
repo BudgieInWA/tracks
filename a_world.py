@@ -27,7 +27,7 @@ def close_enough(a, b):
     return abs(a - b) < EPS
 
 def strs(ss, depth=0, kids=None):
-    if not depth or not kids:
+    if depth == 0 or kids is None:
         return [ss]
     else:
         return [ss] + ["\t" + s for s in itertools.chain.from_iterable(k.strs(depth=depth-1) for k in kids)]
@@ -81,15 +81,16 @@ Hex.directions = [Hex(1, 0), Hex(1, -1), Hex(0, -1), Hex(-1, 0), Hex(-1, 1), Hex
 Hex.direction_id = dict((Hex.directions[i], i) for i in range(len(Hex.directions)))
 
 
-class LandHex:
+class Tile:
     def __init__(self, hex):
         self.hex = hex
-        self.neighbours = None # needs to be filled in for us
 
-        self.tracks = set() #TODO list instead
-        self.buildings = []
+        self.tracks = set() #TODO? list instead?
+        self.buildings = [] #TODO set instead?
 
         self.highlighted = 0
+
+
 
     def do_step(self):
         for b in self.buildings:
@@ -99,15 +100,15 @@ class LandHex:
         return strs(self.__str__(), depth=depth, kids=itertools.chain(self.tracks, self.buildings))
 
     def __str__(self):
-        return "LandHex at {}".format(self.hex)
+        return "Tile at {}".format(self.hex)
 
 
 
 class Track:
-    """A track on some land that goes between edges."""
+    """A track on some tile that goes between edges."""
 
-    def __init__(self, land, length):
-        self.land = land
+    def __init__(self, tile, length):
+        self.tile = tile
         self.length = length
 
     def leave(self, car):
@@ -119,8 +120,8 @@ class Track:
 class Track2(Track):
     """A Track with two ends."""
 
-    def __init__(self, land, length, start_dir, end_dir):
-        super().__init__(land, length)
+    def __init__(self, tile, length, start_dir, end_dir):
+        super().__init__(tile, length)
 
         self.start = start_dir
         self.end = end_dir
@@ -131,25 +132,32 @@ class Track2(Track):
         self.cars = set()
 
     @staticmethod
-    def make(land, dir1, dir2=None):
-        if not dir2:
-            return Station(land, dir1)
+    def make(tile, dir1, dir2=None):
+        if dir2 is None:
+            return Station(tile, dir1)
         if dir1 == dir2.scaled(-1):
-            return StraightTrack(land, dir1)
+            return StraightTrack(tile, dir1)
         elif close_enough(dir1.distance(dir2), 2):
-            return CurvedTrack(land, dir1, dir2)
+            return CurvedTrack(tile, dir1, dir2)
         else:
-            raise ValueError("Cannot create 2track on land {} between directions {} and {}".format(land, dir1, dir2))
+            raise ValueError("Cannot create 2track on tile {} between directions {} and {}".format(tile, dir1, dir2))
 
     def connecting_dirs(self):
         return [self.start, self.end]
 
-    def add_neighbour(self, track, dir):
+    @staticmethod
+    def connect(track1, track2):
+        """Connect two tracks to oneanother."""
+        track1.add_neighbour(track2);
+        track2.add_neighbour(track1);
+        #TODO Done?
+
+    def add_neighbour(self, other, dir):
         if dir == self.start:
-            self.start_neighbours.add(track)
+            self.start_neighbours.add(other)
             return True
         elif dir == self.end:
-            self.end_neighbours.add(track)
+            self.end_neighbours.add(other)
             return True
         else:
             return False
@@ -200,15 +208,15 @@ class StraightTrack(Track2):
     """Track that goes from one edge to the oposite edge.
     
     Length is 1 by definition."""
-    def __init__(self, land, dir1):
-        super().__init__(land, 1.0, dir1, dir1.scaled(-1))
+    def __init__(self, tile, dir1):
+        super().__init__(tile, 1.0, dir1, dir1.scaled(-1))
 
 
 class CurvedTrack(Track2):
     """Track that goes from one edge to an edge two spots away."""
 
-    def __init__(self, land, start_dir, end_dir):
-        super().__init__(land, 0.90689968211, start_dir, end_dir)
+    def __init__(self, tile, start_dir, end_dir):
+        super().__init__(tile, 0.90689968211, start_dir, end_dir)
 
         self.arc_center_dir = None
         start_dir_id = Hex.direction_id[start_dir]
@@ -226,11 +234,11 @@ class CurvedTrack(Track2):
 
 class Station(StraightTrack):
     def get_productions(self):
-        nested_productions = (b.get_productions() for b in self.land.buildings if isinstance(b, Producer))
+        nested_productions = (b.get_productions() for b in self.tile.buildings if isinstance(b, Producer))
         return itertools.chain.from_iterable(nested_productions)
 
     def get_consumers(self):
-        return (b for b in self.land.buildings if isinstance(b, Consumer))
+        return (b for b in self.tile.buildings if isinstance(b, Consumer))
 
 class ResourceProduction:
     def __init__(self, id, max=1.0, rate=0.1):
@@ -373,49 +381,40 @@ class Landscape:
         self.shape = RandomShape(seed)
 
         self.radius = radius
-        self.hexes = None
-        self.land = None
+        self.hexes = list(Hex.range(radius))
+
+        # Create linked Tiles for the region.
+        self.tile = dict((h, Tile(h)) for h in self.hexes)
 
         self.trains = []
 
         self.build_path = None
 
-        self.init()
-
-    def init(self):
-        """Generate a clump of land."""
-        self.hexes = list(Hex.range(self.radius))
-        self.land = dict((h, LandHex(h)) for h in self.hexes)
-
-        # Link land hexes via neighbours.
-        for l in self.land.values():
-            l.neighbours = [self.land[n] for n in l.hex.neighbours() if n in self.land]
-
         """
         # Generate some random tracks starting in the middle.
         rand = random.Random()
         rand.seed(self.seed)
-        land = self.land[Hex(0, 0)]
+        tile = self.tile[Hex(0, 0)]
         start_dir = Hex.directions[0]
         last_track = None
-        while land:
-            print("Track through {}".format(land.hex))
+        while tile:
+            print("Track through {}".format(tile.hex))
 
             dir_id = Hex.direction_id[start_dir.scaled(-1)]
             end_dir = rand.choice([Hex.directions[dir_id], Hex.directions[(dir_id+1)%6], Hex.directions[(dir_id-1)%6]])
-            track = Track2.make(land, start_dir, end_dir)
-            land.tracks.add(track)
+            track = Track2.make(tile, start_dir, end_dir)
+            tile.tracks.add(track)
 
             if last_track:
                 last_track.end_neighbours.add(track)
                 track.start_neighbours.add(last_track)
 
             last_track = track
-            land = self.land.get(land.hex.add(end_dir))
+            tile = self.tile.get(tile.hex.add(end_dir))
             start_dir = end_dir.scaled(-1)
 
         # Put a train on the track
-        track = next(iter(self.land[(0, 0)].tracks))
+        track = next(iter(self.tile[(0, 0)].tracks))
         self.trains.append(TrainCar())
         track.enter(self.trains[0], track.start, 0)
         """
@@ -424,16 +423,16 @@ class Landscape:
         self.build(Hex(2, 0), Forest())
 
     def do_step(self):
-        for land in self.land.values():
-            land.do_step()
+        for tile in self.tile.values():
+            tile.do_step()
         for car in self.trains:
             car.do_step()
 
 
     def highlight(self, hex):
-        self.land[hex].highlighted += 1
+        self.tile[hex].highlighted += 1
     def dehighlight(self, hex):
-        self.land[hex].highlighted -= 1
+        self.tile[hex].highlighted -= 1
 
     def build_track_start(self):
         print("starting build track")
@@ -442,7 +441,7 @@ class Landscape:
     def build_track_select_hex(self, hex):
         p = self.build_path
 
-        if not self.land[hex]:
+        if not self.tile[hex]:
             return
 
         elif len(p) == 0:
@@ -478,7 +477,7 @@ class Landscape:
         from_dir = None
         for i in range(len(self.build_path)):
             hex = self.build_path[i]
-            land = self.land[hex]
+            tile = self.tile[hex]
 
             self.dehighlight(hex)
 
@@ -487,11 +486,11 @@ class Landscape:
                 to_dir = self.build_path[i + 1].subtract(hex)
             
             if from_dir and to_dir:
-                track = Track2.make(land, from_dir, to_dir)
+                track = Track2.make(tile, from_dir, to_dir)
             elif from_dir:
-                track = Track2.make(land, from_dir)
+                track = Track2.make(tile, from_dir)
             else:
-                track = Track2.make(land, to_dir)
+                track = Track2.make(tile, to_dir)
 
             self.build(hex, track)
 
@@ -506,11 +505,11 @@ class Landscape:
 
     def build(self, hex, building):
         if isinstance(building, Track):
-            self.land[hex].tracks.add(building)
+            self.tile[hex].tracks.add(building)
 
             # Connect the track to adjacent tracks.
             for d in building.connecting_dirs():
-                n = self.land.get(hex.add(d))
+                n = self.tile.get(hex.add(d))
                 if n:
                     for t in n.tracks:
                         if t.add_neighbour(building, d.scaled(-1)):
@@ -521,17 +520,17 @@ class Landscape:
 
         
         else:
-            self.land[hex].buildings.append(building)
+            self.tile[hex].buildings.append(building)
 
 
     def scan_land(self):
         """Return lands in scanline order."""
-        return (self.land[h] for h in self.hexes)
+        return (self.tile[h] for h in self.hexes)
 
     def print(self):
         Hex.print_range(
                 self.hexes,
-                item=lambda h: self.land[h],
+                item=lambda h: self.tile[h],
                 hex_width=5,
                 indent=lambda r: abs(r)/2)
 
