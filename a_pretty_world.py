@@ -254,9 +254,10 @@ while True:
                         pgp(car_xy),
                         int(TILESIZE / 5),
                         0)
-                if car.cargo_type:
+                if car.cargo_type is not None:
                     label = FONT.render("{} {}".format(car.cargo_type, car.cargo_amount), False, BLACK)
-                    DISPLAYSURF.blit(label, car_xy - (label.get_width()/2, label.get_height()/2))
+                    xy = tuple(map(int, round(car_xy - (label.get_width()/2, label.get_height()/2)).xy))
+                    DISPLAYSURF.blit(label, xy)
             else:
                 print("not car_xy:", car_xy)
 
