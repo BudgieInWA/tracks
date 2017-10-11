@@ -17,10 +17,10 @@ class RGB(collections.namedtuple("Colour", "r g b")):
     def clamped(val):
         return min(255, max(0, val))
 
-    def __new__(self, *args, **kwargs):
+    def __new__(cls, *args, **kwargs):
         args = (RGB.clamped(a) for a in args)
         kwargs = {k: RGB.clamped(v) for k, v in kwargs.items()}
-        return super().__new__(self, *args, **kwargs)
+        return super().__new__(cls, *args, **kwargs)
 
     def w(self, **kwargs):
         return RGB(
@@ -122,6 +122,15 @@ while True:
             land = landscape.land.get(mouse_hex)
             if not land: continue
             print(land.str(depth=1))
+
+        # middle click
+        if event.type == MOUSEBUTTONDOWN and event.button == 2:
+            print("Mouse at {}".format(mouse_hex))
+            tile = landscape.tiles.get(mouse_hex)
+            if not tile: 
+                print("Outside of the map.")
+            else:
+                print("\n".join(tile.strs()))
 
 
     if currently_building:
