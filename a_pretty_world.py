@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import sys
+import logging
 import collections
 import math
 import pygame
@@ -11,8 +12,11 @@ import hexgrid
 
 from a_world import *
 
-class RGB(collections.namedtuple("Colour", "r g b")):
 
+log = logging.getLogger(__name__)
+
+
+class RGB(collections.namedtuple("Colour", "r g b")):
     @staticmethod
     def clamped(val):
         return min(255, max(0, val))
@@ -31,12 +35,16 @@ class RGB(collections.namedtuple("Colour", "r g b")):
     def scaled(self, k):
         return RGB(r=k*self.r, g=k*self.g, b=k*self.b)
 
+
 def pgp(point):
+    """Format a Point for pygame.draw.* pos arguments."""
     return [round(point.x), round(point.y)]
+
 
 FPS = 15
 
-#constants representing colours
+# Constants representing colours
+# TODO namespace
 BLACK = RGB(  0,   0,   0)
 WHITE = RGB(255, 255, 255)
 BROWN = RGB(153,  76,   0)
@@ -47,45 +55,44 @@ BLUE  = RGB(  0,   0, 255)
 pygame.font.init()
 FONT = pygame.font.SysFont("sans-serif", 24)
 
-#useful game dimensions
+# Useful game dimensions
+WORLD_RADIUS = 3
+HEX_BIG_RADIUS = 100
+HEX_SMALL_RADIUS = HEX_BIG_RADIUS * 0.86602540378
 
-RADIUS = 3 
-TILESIZE  = 100 # outer hex radius
-WIDTH_HEIGHT_RATIO = 0.86602540378 # ratio between outer radius and inner radius
-MAPWIDTH  = (4 * RADIUS + 1) * TILESIZE
-MAPHEIGHT = (4 * RADIUS)     * TILESIZE
+SCREEN_WIDTH  = (4 * WORLD_RADIUS + 1) * HEX_BIG_RADIUS
+SCREEN_HEIGHT = (4 * WORLD_RADIUS)     * HEX_BIG_RADIUS
 
-layout = hexgrid.Layout(orientation=hexgrid.layout_pointy, size=Point(TILESIZE, TILESIZE),
-        origin=Point(MAPWIDTH/2, MAPHEIGHT/2))
+layout = hexgrid.Layout(orientation=hexgrid.layout_pointy, size=Point(HEX_BIG_RADIUS, HEX_BIG_RADIUS),
+                        origin=Point(SCREEN_WIDTH/2, SCREEN_HEIGHT/2))
 
-TRACK_WIDTH = int(TILESIZE / 5)
+TRACK_WIDTH = int(HEX_BIG_RADIUS / 5)
 
-#set up the display
+# Set up the display
 pygame.init()
-DISPLAYSURF = pygame.display.set_mode((MAPWIDTH, MAPHEIGHT))
+DISPLAYSURF = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
 
-# setup hexworld
-landscape = Landscape(radius=RADIUS, seed=420)
+# Set up hexworld
+landscape = Landscape(radius=WORLD_RADIUS, seed=420)
 
 clock = pygame.time.Clock()
 step = 0
 
 currently_building = False
 
-vomit = False
-
 # Event Loop
 while True:
     clock.tick(FPS)
 
-    if vomit:
-        print("=============================")
+    log.debug("\nNew loop at time {}.".format(clock))
 
     # Find out what the mouse is pointing at.
+    # Calculate where in the world the mouse is pointing.
     mouse_xy_pos = pygame.mouse.get_pos()
     mouse_hex_pos = hexgrid.pixel_to_hex(layout, Point(*mouse_xy_pos))
     mouse_hex_cubic = hexgrid.hex_round(mouse_hex_pos)
     mouse_hex = Hex(mouse_hex_cubic.r, mouse_hex_cubic.q)
+    # Calculate which segment of the hex the mouse is in.
     off = hexgrid.Hex(mouse_hex_pos.r - mouse_hex_cubic.r, mouse_hex_pos.q - mouse_hex_cubic.q, mouse_hex_pos.s - mouse_hex_cubic.s)
     diff = (off.r - off.q, off.q - off.s, off.s - off.r)
     m = -1.0
@@ -100,16 +107,17 @@ while True:
     d[(mi+1) % 3] = -sign
     mouse_dir = hexgrid.Hex(*d)
 
-    # Get all the user events
+    log.debug("Mouse at {}".format(mouse_hex))
+
+    # Handle the new events.
     for event in pygame.event.get():
-        #if the user wants to quit
         if event.type == QUIT:
-            #and the game and close the window
             pygame.quit()
             sys.exit()
 
-        # left click
+        # Activate current tool.
         if event.type == MOUSEBUTTONDOWN and event.button == 1:
+            # Building tracks.
             if currently_building:
                 landscape.build_track_end()
                 currently_building = False
@@ -117,60 +125,53 @@ while True:
                 landscape.build_track_start()
                 currently_building = True
 
-        if event.type == KEYDOWN and event.key == K_i:
-            print("Mouse at {}".format(mouse_hex))
-            land = landscape.land.get(mouse_hex)
-            if not land: continue
-            print(land.str(depth=1))
-
-        # middle click
+        # Print detailed info about thing under mouse.
         if event.type == MOUSEBUTTONDOWN and event.button == 2:
             print("Mouse at {}".format(mouse_hex))
             tile = landscape.tiles.get(mouse_hex)
-            if not tile: 
+            if not tile:
                 print("Outside of the map.")
             else:
                 print("\n".join(tile.strs()))
 
-
     if currently_building:
         landscape.build_track_select_hex(mouse_hex)
-    
 
+    #
     # Advance the game state.
     # TODO only advance the game state if we've passed a tick threshold
     try:
         landscape.do_step()
     except BaseException as e:
-        print(e)
+        log.error(e)
 
-
-    # Refresh the canvas
+    #
+    # Draw everything, starting with a blank canvas.
     DISPLAYSURF.fill((20, 20, 20))
-    
+
     # Draw Landscape.
-    for land in landscape.scan_land():
+    for tile in landscape.scan_land():
         selected = False
-        if land.hex.r == mouse_hex_cubic.r and land.hex.q == mouse_hex_cubic.q:
+        if tile.hex.r == mouse_hex_cubic.r and tile.hex.q == mouse_hex_cubic.q:
             selected = True
         colour = BROWN.scaled(1.5) if selected else BROWN
 
-        center = hexgrid.hex_to_pixel(layout, land.hex)
+        center = hexgrid.hex_to_pixel(layout, tile.hex)
 
-        # draw bg
+        # Draw tile background.
         pygame.draw.circle(
                 DISPLAYSURF,
                 colour,
                 pgp(center),
-                int(TILESIZE * WIDTH_HEIGHT_RATIO),
+                int(HEX_SMALL_RADIUS),
                 0)
 
-        # draw tracks
-        for track in land.tracks:
+        # Draw tracks.
+        for track in tile.tracks:
             if isinstance(track, StraightTrack):
-                start_target_pos = hexgrid.hex_to_pixel(layout, land.hex.add(track.start))
+                start_target_pos = hexgrid.hex_to_pixel(layout, tile.hex.add(track.start))
                 start_pos = Point((center.x + start_target_pos.x) / 2, (center.y + start_target_pos.y) / 2)
-                end_target_pos = hexgrid.hex_to_pixel(layout, land.hex.add(track.end))
+                end_target_pos = hexgrid.hex_to_pixel(layout, tile.hex.add(track.end))
                 end_pos = Point((center.x + end_target_pos.x) / 2, (center.y + end_target_pos.y) / 2)
 
                 track.xy_start = start_pos
@@ -182,20 +183,14 @@ while True:
                         pgp(start_pos),
                         pgp(end_pos),
                         TRACK_WIDTH)
-                if vomit:
-                    pygame.draw.circle(
-                            DISPLAYSURF,
-                            WHITE,
-                            pgp(start_pos),
-                            TRACK_WIDTH)
 
             elif isinstance(track, CurvedTrack):
-                arc_center = hexgrid.hex_to_pixel(layout, land.hex.add(track.arc_center_dir))
+                arc_center = hexgrid.hex_to_pixel(layout, tile.hex.add(track.arc_center_dir))
                 track.xy_arc_center = arc_center
                 angle_to_hex_center = -pygame.math.Vector2(1, 0).angle_to(pygame.math.Vector2(center) - pygame.math.Vector2(arc_center))
                 track.xy_start_angle = (angle_to_hex_center - 30) * math.pi / 180.0 # TODO figure out order
                 track.xy_end_angle = (angle_to_hex_center + 31) * math.pi / 180.0
-                R = TILESIZE * 1.5
+                R = HEX_BIG_RADIUS * 1.5
 
                 pygame.draw.arc(
                         DISPLAYSURF,
@@ -207,33 +202,27 @@ while True:
                         TRACK_WIDTH)
 
             if isinstance(track, Station):
-                R = TILESIZE * 0.3
+                R = HEX_BIG_RADIUS * 0.3
                 pygame.draw.rect(
                         DISPLAYSURF,
                         WHITE,
                         [round(center.x - R), round(center.y - R), 2 * R, 2 * R],
                         0)
 
-
-        # draw buildings
-        label = FONT.render("\n".join(str(b) for b in land.buildings), False, BLACK)
+        # Draw buildings.
+        label = FONT.render("\n".join(str(b) for b in tile.buildings), False, BLACK)
         DISPLAYSURF.blit(label, pygame.math.Vector2(center) - (label.get_width()/2, label.get_height()/2))
 
-
-        # draw highlights
-        if land.highlighted:
+        # Draw highlights.
+        if tile.highlighted:
             pygame.draw.circle(
                     DISPLAYSURF,
                     GREEN,
                     pgp(center),
-                    int(TILESIZE * 0.5),
-                    land.highlighted)
+                    int(HEX_BIG_RADIUS * 0.5),
+                    tile.highlighted)
 
-        if False:
-            label = FONT.render(str(land.hex), False, WHITE)
-            DISPLAYSURF.blit(label, pygame.math.Vector2(p) - (label.get_width()/2, label.get_height()/2))
-
-    # draw train cars
+    # Draw train cars.
     for car in landscape.trains:
         if not hasattr(car, 'colour'):
             car.colour = RGB(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
@@ -244,7 +233,7 @@ while True:
                 car_xy = car.track.xy_start + car.track.xy_vector * car.track_pos
 
             elif isinstance(car.track, CurvedTrack):
-                R = TILESIZE * 1.5
+                R = HEX_BIG_RADIUS * 1.5
                 angle_diff = car.track_pos
                 if car.track_facing < 0:
                     angle_diff = car.track.length - angle_diff
@@ -254,23 +243,21 @@ while True:
                     angle = car.track.xy_start_angle + angle_diff
                 car_x = car.track.xy_arc_center.x + math.cos(-angle) * R
                 car_y = car.track.xy_arc_center.y + math.sin(-angle) * R
-                car_xy = pygame.math.Vector2(car_x, car_y)
+                car_xy = Point(car_x, car_y)
 
             if car_xy is not None:
                 pygame.draw.circle(
                         DISPLAYSURF,
                         car.colour,
                         pgp(car_xy),
-                        int(TILESIZE / 5),
+                        int(HEX_BIG_RADIUS / 5),
                         0)
                 if car.cargo_type is not None:
                     label = FONT.render("{} {}".format(car.cargo_type, car.cargo_amount), False, BLACK)
                     xy = tuple(map(int, round(car_xy - (label.get_width()/2, label.get_height()/2)).xy))
                     DISPLAYSURF.blit(label, xy)
             else:
-                print("not car_xy:", car_xy)
-
-
+                log.debug("not car_xy: {}".format(car_xy))
 
     label = FONT.render("({}, {}) in ({}, {}, {})".format(*mouse_xy_pos, *(round(x, 2) for x in mouse_hex_cubic)), False, WHITE)
     DISPLAYSURF.blit(label, (0, 0))
@@ -286,9 +273,8 @@ while True:
             DISPLAYSURF,
             BLACK,
             selected_hex_pos,
-            round(TILESIZE/5),
+            round(HEX_BIG_RADIUS/5),
             0)
-
 
     # Update the display.
     pygame.display.update()

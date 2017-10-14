@@ -1,6 +1,5 @@
-import sys
+import logging
 import random
-import time
 import itertools
 
 import string
@@ -9,7 +8,11 @@ from collections import namedtuple, defaultdict
 from opensimplex import OpenSimplex
 from clint.textui import colored, puts, min_width
 
+log = logging.getLogger(__name__)
+
+
 EPS = 1e-4
+
 
 class RandomShape:
     def __init__(self, seed=0):
@@ -36,6 +39,7 @@ def labels_of_length(length):
             for suffix in labels_of_length(length - 1):
                 yield letter + suffix
 
+
 def all_labels():
     length = 1
     while True:
@@ -43,14 +47,15 @@ def all_labels():
             yield label
         length += 1
 
-def label(obj):
+def label_for(obj):
     if hasattr(obj, "label"):
-        return
+        return obj.label
 
-    if not hasattr(obj.__class__, "label_generator"):
-        obj.__class__.label_generator = all_labels()
+    cls = obj.__class__
+    if not hasattr(cls, "label_generator"):
+        cls.label_generator = all_labels()
 
-    obj.label = next(obj.__class__.label_generator)
+    return next(cls.label_generator)
 
 
 def strs(ss, depth_limit=10, kids=None):
@@ -59,10 +64,10 @@ def strs(ss, depth_limit=10, kids=None):
         return [ss]
     else:
         return [ss] + ["\t" + s for s in
-                itertools.chain.from_iterable(k.strs(depth_limit=depth_limit-1) for k in kids)]
+                       itertools.chain.from_iterable(k.strs(depth_limit=depth_limit-1) for k in kids)]
+
 
 class Hex(namedtuple('Hex', ['r', 'q'])):
-
     def add(self, other):
         return Hex(self.r + other.r, self.q + other.q)
 
@@ -80,7 +85,6 @@ class Hex(namedtuple('Hex', ['r', 'q'])):
               + abs(self.q + self.r - h.q - h.r)
               + abs(self.r - h.r)) / 2
 
-
     @staticmethod
     def range(radius):
         for r in range(2*radius + 1): 
@@ -92,8 +96,8 @@ class Hex(namedtuple('Hex', ['r', 'q'])):
                 yield Hex(r - radius, q)
 
     @staticmethod
-    def print_range(hexes, item=lambda h: h, hex_width=2, indent=lambda: 0):
-        # Assume scanline ordering
+    def print_range(hexes, item=lambda h: h, hex_width=2, indent=lambda r: 0):
+        # Assume scanline ordering.
         last_r = None
         for h in hexes: 
             if h.r != last_r:
@@ -114,12 +118,10 @@ class Tile:
     def __init__(self, hex):
         self.hex = hex
 
-        self.tracks = set() #TODO? list instead?
-        self.buildings = [] #TODO set instead?
+        self.tracks = set()  #TODO? list instead?
+        self.buildings = []  #TODO set instead?
 
         self.highlighted = 0
-
-
 
     def do_step(self):
         for b in self.buildings:
@@ -145,12 +147,11 @@ class Tile:
         return "<Tile at {}>".format(self.hex)
 
 
-
 class Track:
     """A track on some tile that goes between edges."""
 
     def __init__(self, tile, length=1, dirs=set()):
-        label(self)
+        self.label = label_for(self)
 
         self.tile = tile
         self.length = length
@@ -168,32 +169,39 @@ class Track:
 
     @staticmethod
     def try_connect(track1, dir, track2):
-        print("Trying to connect {} going {} to {}...".format(track1, dir, track2))
         """Connect two tracks to one another if they meet."""
+        log.debug("Trying to connect {} going {} to {}...".format(track1, dir, track2))
+
         other_dir = dir.scaled(-1)
         if track2.add_neighbour(other_dir, track1):
             if track1.add_neighbour(dir, track2):
-                print("\tyes.")
+                log.debug("\tyes.")
                 return
             else:
                 track2.remove_neightbour(other_dir, track1)
-        print("\tno.")
+        log.debug("\tno.")
                 
+    def add_car(self, car):
+        self.cars.add(car)
+        car.track = self
 
+    def enter(self, car, dir, dist):
+        raise NotImplementedError("Track subclass must implement the enter method.")
 
-    def leave(self, car):
+    def remove_car(self, car):
         car.track = None
         self.cars.remove(car)
 
-    def enter(self, car):
-        self.cars.add(car)
-        car.track = self
-        
+    def leave(self, car):
+        self.remove_car(car)
+
+
     def strs(self, depth_limit=10):
         return strs(str(self), depth_limit=depth_limit, kids=self.cars)
 
     def __str__(self, name="Track"):
         return "<{} {} between dirs {}>".format(name, self.label, ", ".join(map(str, self.dirs)))
+
 
 class Track2(Track):
     """A Track with two ends."""
@@ -216,7 +224,7 @@ class Track2(Track):
             raise ValueError("Cannot create 2track on tile {} between directions {} and {}".format(tile, dir1, dir2))
 
     def enter(self, car, dir, dist):
-        super().enter(car)
+        super().add_car(car)
 
         if dir == self.start:
             car.track_facing = 1
@@ -244,7 +252,7 @@ class Track2(Track):
                 next_segment.enter(car, self.end.scaled(-1), car.track_pos - self.length)
             else:
                 car.speed = 0
-                print("Car {} crashed off the {} end of {}.".format(car, self.end, self))
+                log.warning("Car {} crashed off the {} end of {}.".format(car, self.end, self))
 
         # Is the car off the start?
         if car.track_pos < 0:
@@ -258,6 +266,7 @@ class Track2(Track):
 
     def __str__(self):
         return super().__str__("2Track")
+
 
 class StraightTrack(Track2):
     """Track that goes from one edge to the opposite edge.
@@ -297,6 +306,7 @@ class Station(StraightTrack):
     def get_consumers(self):
         return (b for b in self.tile.buildings if isinstance(b, Consumer))
 
+
 class ResourceProduction:
     def __init__(self, id, max=1.0, rate=0.1):
         self.id = id
@@ -321,15 +331,16 @@ class ResourceProduction:
         self.current -= amount
         return int(amount)
 
-    def strs(self, depth=0):
+    def strs(self, depth_limit=10):
         return [self.__str__()]
 
     def __str__(self):
         return "{} ({}/{} @ {})".format(self.id, self.current, self.max, self.rate)
 
+
 class Producer:
     def __init__(self, resources):
-        self.resources = { r.id: r for r in resources }
+        self.resources = {r.id: r for r in resources}
 
     def resource_ids(self):
         return self.resources.keys()
@@ -341,8 +352,8 @@ class Producer:
         for r in self.resources.values():
             r.do_step()
 
-    def strs(self, depth=0):
-        return strs(self.__str__(), depth=0, kids=self.resources)
+    def strs(self, depth_limit=10):
+        return strs(self.__str__(), depth_limit=depth_limit, kids=self.resources)
 
     def __str__(self):
         return "Producer of {}".format(", ".join("{} ({:.1f})".format(r.id, r.current) for r in self.resources.values()))
@@ -351,6 +362,7 @@ class Producer:
 class Consumer:
     def consume(self, resource, amount):
         pass
+
 
 class AllPurposeShop(Consumer):
     def __init__(self):
@@ -375,9 +387,9 @@ class AllPurposeShop(Consumer):
     def strs(self, **kwargs):
         return strs(str(self), **kwargs)
 
-        
     def __str__(self):
         return "All Purpose Shop"
+
 
 class Forest(Producer):
     def __init__(self):
@@ -389,6 +401,8 @@ class Forest(Producer):
 
 class TrainCar:
     def __init__(self):
+        self.label = label_for(self)
+
         self.track = None
         self.track_pos = None
         self.track_facing = None
@@ -405,8 +419,8 @@ class TrainCar:
 
         if self.track:
             if (isinstance(self.track, Station) and self.track is not self.last_station and
-                    self.track_pos > self.track.length * 0.3 and
-                    self.track_pos < self.track.length * 0.7):
+                        self.track_pos > self.track.length * 0.3 and
+                        self.track_pos < self.track.length * 0.7):
                 # Arrived at a station.
                 station = self.track
 
@@ -415,21 +429,20 @@ class TrainCar:
                     if consumer:
                         self.cargo_amount -= consumer.consume(self.cargo_type, self.cargo_amount)
                         if self.cargo_amount < 0.0:
-                            cargo_amount = 0.0
+                            self.cargo_amount = 0.0
                         if self.cargo_amount == 0.0:
                             self.cargo_type = None
 
                 if self.cargo_amount == 0.0:
                     self.collect_from_station(station)
 
-                self.track_facing *= -1;
+                self.track_facing *= -1
                 self.last_station = station
             else:
                 self.track.move_car(self, self.speed)
 
     def choose_next_track(self, tracks):
         return random.choice(list(tracks))
-
 
     def collect_from_station(self, station):
         for production in station.get_productions():
@@ -444,6 +457,7 @@ class TrainCar:
 
     def __str__(self):
         return "<TrainCar carrying {}>".format(self.cargo_type)
+
 
 class Landscape:
     def __init__(self, seed=0, radius=3):
@@ -541,7 +555,7 @@ class Landscape:
             raise ValueError("Cannot select hexes far away while building")
 
     def build_track_end(self):
-        if len(self.build_path) == 1:
+        if len(self.build_path) <= 1:
             return
 
         from_dir = None
@@ -562,12 +576,12 @@ class Landscape:
             else:
                 track = Track2.make(tile, to_dir)
 
-            print("Building {} at {}".format(track, hex))
+            log.debug("Building {} at {}".format(track, hex))
             try:
                 self.build(hex, track)
+                log.debug("\tyep.")
             except ValueError:
-                print("\t(not building duplicate track)")
-
+                log.debug("\tnope.")
 
             from_dir = to_dir.scaled(-1) if to_dir else None
 
@@ -576,7 +590,6 @@ class Landscape:
         self.trains.append(train)
 
         self.build_path = None
-
 
     def build(self, hex, building):
         if isinstance(building, Track):
