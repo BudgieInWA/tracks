@@ -307,6 +307,8 @@ class Station(StraightTrack):
         return (b for b in self.tile.buildings if isinstance(b, Consumer))
 
 
+# Buildings and such.
+
 class ResourceProduction:
     def __init__(self, id, max=1.0, rate=0.1):
         self.id = id
@@ -503,6 +505,7 @@ class Landscape:
         track.enter(self.trains[0], track.start, 0)
         """
 
+        # TODO Use the random shape to add features to the map.
         self.build(Hex(0, 0), AllPurposeShop())
         self.build(Hex(2, 0), Forest())
 
