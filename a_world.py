@@ -604,9 +604,9 @@ class Landscape:
         else:
             self.tiles[hex].buildings.append(building)
 
-
-    def scan_land(self):
+    def scan_land(self, bounding_rectangle=None):
         """Return lands in scanline order."""
+        # TODO bounding_rectangle
         return (self.tiles[h] for h in self.hexes)
 
     def print(self):

@@ -28,9 +28,9 @@ class RGB(collections.namedtuple("Colour", "r g b")):
 
     def w(self, **kwargs):
         return RGB(
-                r = kwargs.get("r") or self.r,
-                g = kwargs.get("g") or self.g,
-                b = kwargs.get("b") or self.b)
+                r=kwargs.get("r") or self.r,
+                g=kwargs.get("g") or self.g,
+                b=kwargs.get("b") or self.b)
 
     def scaled(self, k):
         return RGB(r=k*self.r, g=k*self.g, b=k*self.b)
@@ -139,8 +139,10 @@ while True:
 
     #
     # Advance the game state.
-    # TODO only advance the game state if we've passed a tick threshold
+    # TODO Advance time in turns, when the user gives input, or every 1 sec or something.
+
     try:
+        # TODO Only advance the game state if we've passed a tick threshold.
         landscape.do_step()
     except BaseException as e:
         log.error(e)
@@ -148,6 +150,7 @@ while True:
     #
     # Draw everything, starting with a blank canvas.
     DISPLAYSURF.fill((20, 20, 20))
+    # TODO Make the viewport move and zoom around the world.
 
     # Draw Landscape.
     for tile in landscape.scan_land():
