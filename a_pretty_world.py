@@ -78,6 +78,7 @@ landscape = Landscape(radius=WORLD_RADIUS, seed=420)
 clock = pygame.time.Clock()
 step = 0
 
+debug_gui = False
 currently_building = False
 
 # Event Loop
@@ -114,6 +115,10 @@ while True:
         if event.type == QUIT:
             pygame.quit()
             sys.exit()
+
+        # Toggle debug GUI.
+        if event.type == KEYDOWN and event.key == K_BACKQUOTE:
+            debug_gui = not debug_gui
 
         # Activate current tool.
         # Currently build track.
@@ -262,22 +267,37 @@ while True:
             else:
                 log.debug("not car_xy: {}".format(car_xy))
 
-    label = FONT.render("({}, {}) in ({}, {}, {})".format(*mouse_xy_pos, *(round(x, 2) for x in mouse_hex_cubic)), False, WHITE)
-    DISPLAYSURF.blit(label, (0, 0))
+    # Draw debug GUI.
+    if debug_gui:
+        # Draw mouse coords
 
-    selected_hex_pos = pgp(Point(*hexgrid.hex_to_pixel(layout, mouse_hex_cubic)))
-    pygame.draw.line(
-            DISPLAYSURF,
-            BLACK,
-            selected_hex_pos,
-            pgp(Point(*hexgrid.hex_to_pixel(layout, hexgrid.hex_add(mouse_hex_cubic, mouse_dir)))),
-            3)
-    pygame.draw.circle(
-            DISPLAYSURF,
-            BLACK,
-            selected_hex_pos,
-            round(HEX_BIG_RADIUS/5),
-            0)
+        tile = landscape.tiles.get(mouse_hex)
+        if not tile:
+            print()
+        else:
+            print()
+        debug_sting = "({}, {}) in ({}, {}, {})\n{}".format(
+            *mouse_xy_pos,
+            *(round(x, 2) for x in mouse_hex_cubic),
+            "\n".join(tile.strs()) if tile else "Outside of the map."
+        )
+
+        label = FONT.render(debug_sting, False, WHITE)
+        DISPLAYSURF.blit(label, (0, 0))
+
+        selected_hex_pos = pgp(Point(*hexgrid.hex_to_pixel(layout, mouse_hex_cubic)))
+        pygame.draw.line(
+                DISPLAYSURF,
+                BLACK,
+                selected_hex_pos,
+                pgp(Point(*hexgrid.hex_to_pixel(layout, hexgrid.hex_add(mouse_hex_cubic, mouse_dir)))),
+                3)
+        pygame.draw.circle(
+                DISPLAYSURF,
+                BLACK,
+                selected_hex_pos,
+                round(HEX_BIG_RADIUS/5),
+                0)
 
     # Update the display.
     pygame.display.update()
