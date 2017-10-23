@@ -580,16 +580,20 @@ class Landscape:
             try:
                 self.build(hex, track)
                 log.debug("\tyep.")
+                # DEBUG Build a train car for free:
+                if i == 0:
+                    self.build_car(track)
             except ValueError:
                 log.debug("\tnope.")
 
             from_dir = to_dir.scaled(-1) if to_dir else None
 
+        self.build_path = None
+
+    def build_car(self, track):
         train = TrainCar()
         track.enter(train, track.start, 0)
         self.trains.append(train)
-
-        self.build_path = None
 
     def build(self, hex, building):
         if isinstance(building, Track):

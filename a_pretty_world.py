@@ -116,14 +116,14 @@ while True:
             sys.exit()
 
         # Activate current tool.
+        # Currently build track.
         if event.type == MOUSEBUTTONDOWN and event.button == 1:
             # Building tracks.
-            if currently_building:
-                landscape.build_track_end()
-                currently_building = False
-            else:
                 landscape.build_track_start()
                 currently_building = True
+        elif event.type == MOUSEBUTTONUP and event.button == 1:
+            landscape.build_track_end()
+            currently_building = False
 
         # Print detailed info about thing under mouse.
         if event.type == MOUSEBUTTONDOWN and event.button == 2:
