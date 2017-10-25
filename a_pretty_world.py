@@ -260,10 +260,10 @@ while True:
                         pgp(car_xy),
                         int(HEX_BIG_RADIUS / 5),
                         0)
-                if car.cargo_type is not None:
-                    label = FONT.render("{} {}".format(car.cargo_type, car.cargo_amount), False, BLACK)
-                    xy = tuple(map(int, round(car_xy - (label.get_width()/2, label.get_height()/2)).xy))
-                    DISPLAYSURF.blit(label, xy)
+
+                label = FONT.render(str(car.inventory), False, BLACK)
+                xy = tuple(map(int, round(car_xy - (label.get_width()/2, label.get_height()/2)).xy))
+                DISPLAYSURF.blit(label, xy)
             else:
                 log.debug("not car_xy: {}".format(car_xy))
 

@@ -1,13 +1,14 @@
-import logging
-import random
-import itertools
-
 import string
 from collections import namedtuple, defaultdict
+from enum import Enum
+
+import random
+import itertools
 
 from opensimplex import OpenSimplex
 from clint.textui import colored, puts, min_width
 
+import logging
 log = logging.getLogger(__name__)
 
 
@@ -299,29 +300,19 @@ class CurvedTrack(Track2):
 
 
 class Station(StraightTrack):
-    def get_productions(self):
-        nested_productions = (b.get_productions() for b in self.tile.buildings if isinstance(b, Producer))
-        return itertools.chain.from_iterable(nested_productions)
-
-    def get_consumers(self):
-        return (b for b in self.tile.buildings if isinstance(b, Consumer))
+    pass
 
 
-# Buildings and such.
+class Resource(Enum):
+    Currency = 'currency'
+
+    Wood = 'wood'
+    Stone = 'stone'
+
 
 class ResourceProduction:
     def __init__(self, id, max=1.0, rate=0.1):
         self.id = id
-        self.max = max
-        self.rate = rate
-        self.current = 0.0
-
-    def produce(self):
-        self.current += self.rate
-        self.current = min(self.max, self.current)
-
-    def do_step(self):
-        self.produce()
 
     def full(self):
         return self.current >= self.max
@@ -340,62 +331,79 @@ class ResourceProduction:
         return "{} ({}/{} @ {})".format(self.id, self.current, self.max, self.rate)
 
 
-class Producer:
-    def __init__(self, resources):
-        self.resources = {r.id: r for r in resources}
+class Inventory(dict):
+    def __init__(self, resource_capacity):
+        """
+        :param resource_capacity: maps resource ids to capacity, or -1 for unlimited.
+        """
+        kv = None
+        default = 0
+        if resource_capacity is None:
+            default = -1
+        elif isinstance(resource_capacity, dict):
+            kv = resource_capacity
+        elif isinstance(resource_capacity, int):
+            default = resource_capacity
 
-    def resource_ids(self):
-        return self.resources.keys()
+        factory = lambda: default
+        if kv is not None:
+            self.caps = defaultdict(factory, kv)
+        else:
+            self.caps = defaultdict(factory)
 
-    def get_productions(self):
-        return self.resources.values()
+    # TODO
+    # += and -= with bounds checks
 
-    def do_step(self):
-        for r in self.resources.values():
-            r.do_step()
+    @staticmethod
+    def trade(giver_inv, receiver_inv, resource, count, price):
+        # TODO
+        if giver_inv[resource] < count or receiver_inv.cap[resource] < count:
+            return False
+        if receiver_inv[Resource.Currency] < price:
+            return False
 
-    def strs(self, depth_limit=10):
-        return strs(self.__str__(), depth_limit=depth_limit, kids=self.resources)
+        giver_inv[resource] -= count
+        receiver_inv[resource] += count
+
+        giver_inv[Resource.Currency] += price
+        receiver_inv[Resource.Currency] += price
+
+    # def strs(self, depth_limit=10):
+    #     return strs(self.__str__(), depth_limit=depth_limit, kids=self.resources)
 
     def __str__(self):
-        return "Producer of {}".format(", ".join("{} ({:.1f})".format(r.id, r.current) for r in self.resources.values()))
-        
-
-class Consumer:
-    def consume(self, resource, amount):
-        pass
+        return ", ".join("{} ({:.1f})".format(r, c) for r, c in self.values() if c > 0) or "nothing"
 
 
-class AllPurposeShop(Consumer):
+class Home:
     def __init__(self):
+        self.inventory = Inventory(resource_capacity=None)
         self.prices = {
-                "wood": 2.0,
+                Resource.Wood: 2.0,
                 }
-
-    def accepts(self, resource):
-        return resource in self.prices
-
-    def consume(self, resource, amount):
-        if resource in self.prices:
-            print("Sold {} {} for {}.".format(amount, resource, amount * self.prices[resource]))
-            return amount
-        else:
-            print("Cannot sell {}.".format(resource))
-            return 0.0
 
     def do_step(self):
         pass
 
     def strs(self, **kwargs):
-        return strs(str(self), **kwargs)
+        return strs(str(self), kids=[self.inventory], **kwargs)
 
     def __str__(self):
-        return "All Purpose Shop"
+        return "Home"
 
 
-class Forest(Producer):
-    def __init__(self):
-        super().__init__([ResourceProduction('wood', max=10.0, rate=0.01)])
+class Forest:
+    def __init__(self, rate=2):
+        self.inventory = Inventory({
+            Resource.Wood: 100,
+        })
+        self.rate = rate
+
+    def do_step(self):
+        try:
+            self.inventory[Resource.Wood] += self.rate
+        except:
+            pass
 
     def strs(self, **kwargs):
         return strs(str(self), **kwargs)
@@ -405,60 +413,53 @@ class TrainCar:
     def __init__(self):
         self.label = label_for(self)
 
+        self.inventory = Inventory(resource_capacity=10)  # TODO restrict to any one stack
+
         self.track = None
         self.track_pos = None
         self.track_facing = None
-        self.speed = 0.05
+        self.speed = 0
 
-        self.last_station = None
-        self.cargo_type = None
-        self.cargo_max = 1.0
-        self.cargo_amount = 0.0
+        self.reset_plan()
 
-    def do_step(self):
-        if False:
-            print("{}: {} {} {}".format(self, self.track, self.track_pos, self.track_facing))
+    def reset_plan(self):
+        self.target_hex = None
+        self.planned_path = None
 
-        if self.track:
-            if (isinstance(self.track, Station) and self.track is not self.last_station and
-                        self.track_pos > self.track.length * 0.3 and
-                        self.track_pos < self.track.length * 0.7):
-                # Arrived at a station.
-                station = self.track
+        # TODO look for something to do.
 
-                if self.cargo_amount > 0.0:
-                    consumer = next((c for c in station.get_consumers() if c.accepts(self.cargo_type)), None)
-                    if consumer:
-                        self.cargo_amount -= consumer.consume(self.cargo_type, self.cargo_amount)
-                        if self.cargo_amount < 0.0:
-                            self.cargo_amount = 0.0
-                        if self.cargo_amount == 0.0:
-                            self.cargo_type = None
-
-                if self.cargo_amount == 0.0:
-                    self.collect_from_station(station)
-
-                self.track_facing *= -1
-                self.last_station = station
-            else:
-                self.track.move_car(self, self.speed)
+    def pathfind_to(self, target):
+        """Find a path through the track network to target hex(or maybe as close as possible)"""
+        #TODO Flood fill to see if you can find the target.
 
     def choose_next_track(self, tracks):
+        if self.planned_path is not None:
+            if self.planned_path[0] in tracks:
+                return self.planned_path.popleft()
+            else:
+                self.reset_plan()
+                return self.choose_next_track(tracks)
+
         return random.choice(list(tracks))
 
-    def collect_from_station(self, station):
-        for production in station.get_productions():
-            amount = production.collect(self.cargo_max)
-            if amount > 0.0:
-                self.cargo_type = production.id
-                self.cargo_amount = amount
-                return
+
+    def do_step(self):
+        if self.track is not None:
+            # TODO accelerate or coast or decelerate or turn around
+            # self.track_facing *= -1
+
+            if self.speed:
+                self.track.move_car(self, self.speed)
+            else:
+                pass  # TODO do some trade
+
 
     def strs(self, **kwargs):
-        return strs(str(self), **kwargs)
+        return strs(str(self), kids=[self.inventory], **kwargs)
 
     def __str__(self):
-        return "<TrainCar carrying {}>".format(self.cargo_type)
+        types = (r for r, c in self.inventory if c > 0)
+        return "<TrainCar carrying {}>".format(", ".join(types))
 
 
 class Landscape:
@@ -506,7 +507,7 @@ class Landscape:
         """
 
         # TODO Use the random shape to add features to the map.
-        self.build(Hex(0, 0), AllPurposeShop())
+        self.build(Hex(0, 0), Home())
         self.build(Hex(2, 0), Forest())
 
     def do_step(self):
