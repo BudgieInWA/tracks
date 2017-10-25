@@ -127,7 +127,7 @@ while True:
                 landscape.build_track_start()
                 currently_building = True
         elif event.type == MOUSEBUTTONUP and event.button == 1:
-            landscape.build_track_end()
+            landscape.build_track_commit()
             currently_building = False
 
         # Print detailed info about thing under mouse.

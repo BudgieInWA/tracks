@@ -345,11 +345,10 @@ class Inventory(dict):
         elif isinstance(resource_capacity, int):
             default = resource_capacity
 
-        factory = lambda: default
         if kv is not None:
-            self.caps = defaultdict(factory, kv)
+            self.caps = defaultdict(lambda: default, mapping=kv)  #TODO
         else:
-            self.caps = defaultdict(factory)
+            self.caps = defaultdict(lambda: default)
 
     # TODO
     # += and -= with bounds checks
@@ -558,40 +557,41 @@ class Landscape:
         else:
             raise ValueError("Cannot select hexes far away while building")
 
-    def build_track_end(self):
-        if len(self.build_path) <= 1:
-            return
+    def build_track_commit(self):
+        if len(self.build_path) > 1:
+            from_dir = None
+            for i in range(len(self.build_path)):
+                hex = self.build_path[i]
+                tile = self.tiles[hex]
 
-        from_dir = None
-        for i in range(len(self.build_path)):
-            hex = self.build_path[i]
-            tile = self.tiles[hex]
+                to_dir = None
+                if i + 1 < len(self.build_path):
+                    to_dir = self.build_path[i + 1].subtract(hex)
 
+                if from_dir and to_dir:
+                    track = Track2.make(tile, from_dir, to_dir)
+                elif from_dir:
+                    track = Track2.make(tile, from_dir)
+                else:
+                    track = Track2.make(tile, to_dir)
+
+                log.debug("Building {} at {}".format(track, hex))
+                try:
+                    self.build(hex, track)
+                    log.debug("\tyep.")
+                    # DEBUG Build a train car for free:
+                    if i == 0:
+                        self.build_car(track)
+                except ValueError:
+                    log.debug("\tnope.")
+
+                from_dir = to_dir.scaled(-1) if to_dir else None
+
+        self.build_track_cancel()
+
+    def build_track_cancel(self):
+        for hex in self.build_path:
             self.dehighlight(hex)
-
-            to_dir = None
-            if i + 1 < len(self.build_path):
-                to_dir = self.build_path[i + 1].subtract(hex)
-            
-            if from_dir and to_dir:
-                track = Track2.make(tile, from_dir, to_dir)
-            elif from_dir:
-                track = Track2.make(tile, from_dir)
-            else:
-                track = Track2.make(tile, to_dir)
-
-            log.debug("Building {} at {}".format(track, hex))
-            try:
-                self.build(hex, track)
-                log.debug("\tyep.")
-                # DEBUG Build a train car for free:
-                if i == 0:
-                    self.build_car(track)
-            except ValueError:
-                log.debug("\tnope.")
-
-            from_dir = to_dir.scaled(-1) if to_dir else None
-
         self.build_path = None
 
     def build_car(self, track):
@@ -606,8 +606,11 @@ class Landscape:
 
             # Connect the track to adjacent tracks.
             for dir in track.dirs:
-                for other in self.tiles[hex.add(dir)].tracks:
-                    Track.try_connect(track, dir, other)
+                try:
+                    for other in self.tiles[hex.add(dir)].tracks:
+                        Track.try_connect(track, dir, other)
+                except KeyError:
+                    pass
         
         else:
             self.tiles[hex].buildings.append(building)
