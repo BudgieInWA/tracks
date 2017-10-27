@@ -468,11 +468,19 @@ class TrainCar:
                     if dir != from_dir:
                         # Take note of the places we can go next.
                         for next_track in track.neighbours_at[dir]:
-                            dists[next_track] = dists[track] + 1
+                            new_dist = dists[track] + 1
+                            try:
+                                existing_dist = dists[next_track]
+                                if new_dist >= existing_dist:
+                                    continue
+                            except IndexError:
+                                pass
+
+                            dists[next_track] = new_dist
                             parents[next_track] = track
                             queue.append((next_track, dir))
 
-            except IndexError:
+            except KeyError:
                 break
 
         if destination is None:
