@@ -1,5 +1,5 @@
 import string
-from collections import namedtuple, defaultdict
+from collections import namedtuple, defaultdict, deque
 from enum import Enum
 
 import random
@@ -228,7 +228,7 @@ class Track2(Track):
         super().add_car(car)
 
         if dir == self.start:
-            car.track_facing = 1
+            car.track_facing = 1  # FIXME change track_facing to a dir
             car.track_pos = 0
         elif dir == self.end:
             car.track_facing = -1
@@ -310,27 +310,6 @@ class Resource(Enum):
     Stone = 'stone'
 
 
-class ResourceProduction:
-    def __init__(self, id, max=1.0, rate=0.1):
-        self.id = id
-
-    def full(self):
-        return self.current >= self.max
-
-    def collect(self, max=None):
-        """Collect the resource from the production."""
-
-        amount = min(self.current // 1, max or self.max)
-        self.current -= amount
-        return int(amount)
-
-    def strs(self, depth_limit=10):
-        return [self.__str__()]
-
-    def __str__(self):
-        return "{} ({}/{} @ {})".format(self.id, self.current, self.max, self.rate)
-
-
 class Inventory(dict):
     def __init__(self, resource_capacity):
         """
@@ -408,6 +387,29 @@ class Forest:
         return strs(str(self), **kwargs)
 
 
+class TrackMovementPlan:
+    """
+
+    """
+    def __init__(self, path=None):
+        self.path = path
+
+        self.current_path_index = 0
+
+    def get_next_track(self):
+        return self.path[self.current_path_index]
+
+    def advance_to(self, track):
+        expected_track = self.get_next_track().hex
+        if track != expected_track:
+            raise ValueError("{} was not the expected track, {}".format(track, expected_track))
+
+        self.current_path_index += 1
+
+    def done(self):
+        return self.current_path_index == len(self.path) - 1
+
+
 class TrainCar:
     def __init__(self):
         self.label = label_for(self)
@@ -419,24 +421,83 @@ class TrainCar:
         self.track_facing = None
         self.speed = 0
 
-        self.reset_plan()
+        self.plan = None
 
-    def reset_plan(self):
-        self.target_hex = None
-        self.planned_path = None
+        self.enact_some_plan()
 
-        # TODO look for something to do.
+    def enact_some_plan(self):
+        """"""
+        # TODO Look for a job to do, basically
+        #self.enact_plan(some_plan)
+        pass
 
-    def pathfind_to(self, target):
-        """Find a path through the track network to target hex(or maybe as close as possible)"""
-        #TODO Flood fill to see if you can find the target.
+    def enact_plan(self, plan):
+        self.plan = plan
+
+    def pathfind_to(self, target, length_limit=100, time_budget=1000):
+        """
+        Find a path through the track network to target hex(or maybe as close as possible).
+
+        Flood fill to see if you can find the target.
+        """
+        # FIXME seems not to be working
+        origin = self.track
+        destination = None
+
+        # Set up initial state.
+        queue = deque()
+        dists = {origin: 0}
+        parents = {origin: None}
+        for dir in origin.dirs:
+            queue.append((origin, dir))
+
+        # Explore one more node while we have more to explore.
+        for t in range(time_budget):
+            try:
+                (track, from_dir) = queue.popleft()
+                if track.tile.hex == target:
+                    destination = track
+                    break
+
+                if dists[track] >= length_limit:
+                    log.debug("Finishing due to length limit ({})".format(length_limit))
+                    break
+
+                # Explore down all connections to other dirs.
+                for dir in track.dirs:
+                    if dir != from_dir:
+                        # Take note of the places we can go next.
+                        for next_track in track.neighbours_at[dir]:
+                            dists[next_track] = dists[track] + 1
+                            parents[next_track] = track
+                            queue.append((next_track, dir))
+
+            except IndexError:
+                break
+
+        if destination is None:
+            return None
+
+        # Walk the parents tree, building the path.
+        path = deque()
+        track = destination
+        while track is not None:
+            path.appendleft(track)
+            track = parents[track]
+        return path
+
 
     def choose_next_track(self, tracks):
-        if self.planned_path is not None:
-            if self.planned_path[0] in tracks:
-                return self.planned_path.popleft()
+        if self.plan is not None:
+            planned_track = self.plan.get_next_track()
+            if planned_track in tracks:
+                return self.plan.advance_to(planned_track)
             else:
-                self.reset_plan()
+                self.plan = None
+
+        if self.plan is None:
+            self.enact_some_plan()
+            if self.plan is not None:
                 return self.choose_next_track(tracks)
 
         return random.choice(list(tracks))
@@ -444,13 +505,26 @@ class TrainCar:
 
     def do_step(self):
         if self.track is not None:
-            # TODO accelerate or coast or decelerate or turn around
-            # self.track_facing *= -1
+            # Decide what movements to make: accelerate, coast, decelerate, turn around
 
-            if self.speed:
+            if self.plan is not None:
+                if self.plan.done():
+                    self.speed = 0  # TODO deceleration limit
+                    self.plan = None  # TODO plan?
+                else:
+                    # FIXME Check if we need to turn around.
+                    # self.plan.get_next_track()
+
+                    self.speed = 1  # TODO acceleration over time
+
+            if self.speed == 0:
+                # Do trades and such.
+                pass  # TODO
+            elif self.speed > 0:
+                # Actually cause the car to move.
                 self.track.move_car(self, self.speed)
             else:
-                pass  # TODO do some trade
+                log.warn("{} has -ve speed: {}".format(self, self.speed))
 
 
     def strs(self, **kwargs):
@@ -522,7 +596,7 @@ class Landscape:
         self.tiles[hex].highlighted -= 1
 
     def build_track_start(self):
-        print("starting build track")
+        log.debug("starting build track")
         self.build_path = []
 
     def build_track_select_hex(self, hex):
@@ -555,7 +629,7 @@ class Landscape:
             self.highlight(hex)
 
         else:
-            raise ValueError("Cannot select hexes far away while building")
+            raise ValueError("Cannot select hexes far away while building.")
 
     def build_track_commit(self):
         if len(self.build_path) > 1:
@@ -586,6 +660,14 @@ class Landscape:
                     log.debug("\tnope.")
 
                 from_dir = to_dir.scaled(-1) if to_dir else None
+        elif len(self.build_path) == 1:
+            # Try to send all trains here.
+            target = self.build_path[0]
+            log.info("Trying to send all trains to {}".format(target))
+            for train in self.trains:
+                path = train.pathfind_to(target)
+                if path is not None:
+                    train.enact_plan(TrackMovementPlan(path))
 
         self.build_track_cancel()
 
