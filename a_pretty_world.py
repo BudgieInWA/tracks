@@ -41,7 +41,8 @@ def pgp(point):
     return [round(point.x), round(point.y)]
 
 
-FPS = 15
+FPS = 60
+STEPS_PER_TURN = 4
 
 # Constants representing colours
 # TODO namespace
@@ -148,7 +149,8 @@ while True:
 
     try:
         # TODO Only advance the game state if we've passed a tick threshold.
-        landscape.do_step()
+        if step % STEPS_PER_TURN == 0:
+            landscape.do_step()
     except BaseException as e:
         log.error(e)
 
