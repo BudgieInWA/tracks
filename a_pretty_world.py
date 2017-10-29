@@ -42,7 +42,7 @@ def pgp(point):
 
 
 FPS = 60
-STEPS_PER_TURN = 4
+STEPS_PER_TURN = 15
 
 # Constants representing colours
 # TODO namespace
@@ -117,9 +117,18 @@ while True:
             pygame.quit()
             sys.exit()
 
-        # Toggle debug GUI.
-        if event.type == KEYDOWN and event.key == K_BACKQUOTE:
-            debug_gui = not debug_gui
+        if event.type == KEYDOWN:
+            # Toggle debug GUI.
+            if event.key == K_BACKQUOTE:
+                debug_gui = not debug_gui
+
+            # Speed up / Slow down the game
+            if event.key == K_MINUS:
+                log.info("Speed down.")
+                STEPS_PER_TURN += 1
+            if event.key == K_EQUALS:
+                log.info("Speed up.")
+                STEPS_PER_TURN -= 1
 
         # Activate current tool.
         # Currently build track.

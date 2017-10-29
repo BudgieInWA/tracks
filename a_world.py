@@ -10,6 +10,7 @@ from clint.textui import colored, puts, min_width
 
 import logging
 log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 
 EPS = 1e-4
@@ -243,7 +244,9 @@ class Track2(Track):
     def move_car(self, car, dist):
         """Move a car along the track."""
 
-        car.track_pos += dist * car.track_facing
+        dist_fraction = dist / 10  # FIXME New length
+
+        car.track_pos += dist_fraction * car.track_facing
 
         # Is the car off the end?
         if car.track_pos > self.length:
@@ -446,7 +449,7 @@ class TrainCar:
 
         # Set up initial state.
         queue = deque()
-        dists = {origin: 0}
+        dists = defaultdict(lambda: float('inf'), {origin: 0})
         parents = {origin: None}
         for dir in origin.dirs:
             queue.append((origin, dir))
@@ -469,18 +472,15 @@ class TrainCar:
                         # Take note of the places we can go next.
                         for next_track in track.neighbours_at[dir]:
                             new_dist = dists[track] + 1
-                            try:
-                                existing_dist = dists[next_track]
-                                if new_dist >= existing_dist:
-                                    continue
-                            except IndexError:
-                                pass
+                            existing_dist = dists[next_track]
 
-                            dists[next_track] = new_dist
-                            parents[next_track] = track
-                            queue.append((next_track, dir))
+                            if new_dist < existing_dist:
+                                dists[next_track] = new_dist
+                                parents[next_track] = track
+                                queue.append((next_track, dir))
 
-            except KeyError:
+            except KeyError as empty_queue:
+                log.debug("Finishing due to empty queue.")
                 break
 
         if destination is None:
