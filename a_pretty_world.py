@@ -240,14 +240,20 @@ while True:
         if car.track:
             car_xy = None
             if isinstance(car.track, StraightTrack):
-                car_xy = car.track.xy_start + car.track.xy_vector * car.track_pos
+                if car.track_facing == car.track.end:
+                    car_xy = car.track.xy_start + car.track.xy_vector * car.track_pos
+                elif car.track_facing == car.track.start:
+                    car_xy = car.track.xy_start + car.track.xy_vector * (car.track.length - car.track_pos)
+                else:
+                    log.warn("{} is facing a direction that the track it is on does not connect to.".format(car))
 
             elif isinstance(car.track, CurvedTrack):
                 R = HEX_BIG_RADIUS * 1.5
                 angle_diff = car.track_pos
-                if car.track_facing < 0:
-                    angle_diff = car.track.length - angle_diff
-                if car.track.angle_dir * car.track_facing < 1:
+                if car.track_facing == car.track.start:
+                    angle_diff = car.track.length - car.track_pos
+                facing_sign = 1 if car.track_facing == car.track.end else -1
+                if car.track.angle_dir * facing_sign < 1:
                     angle = car.track.xy_end_angle - angle_diff
                 else:
                     angle = car.track.xy_start_angle + angle_diff

@@ -10,6 +10,7 @@ from clint.textui import colored, puts, min_width
 
 import logging
 log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 
 EPS = 1e-4
@@ -82,7 +83,7 @@ class Hex(namedtuple('Hex', ['r', 'q'])):
         return (self.add(d) for d in Hex.directions)
 
     def distance(self, h):
-        return (abs(self.q - h.q) 
+        return (abs(self.q - h.q)
               + abs(self.q + self.r - h.q - h.r)
               + abs(self.r - h.r)) / 2
 
@@ -227,14 +228,13 @@ class Track2(Track):
     def enter(self, car, dir, dist):
         super().add_car(car)
 
+        car.track_pos = 0
         if dir == self.start:
-            car.track_facing = 1  # FIXME change track_facing to a dir
-            car.track_pos = 0
+            car.track_facing = self.end
         elif dir == self.end:
-            car.track_facing = -1
-            car.track_pos = self.length
+            car.track_facing = self.start
         else:
-            raise ValueError("could not add {car} to track because track doesn't go to direction {dir}"
+            raise ValueError("could not add {car} to track because track doesn't have an end at {dir}"
                     .format(car=car, dir=dir))
 
         if dist > 0:
@@ -243,27 +243,21 @@ class Track2(Track):
     def move_car(self, car, dist):
         """Move a car along the track."""
 
-        car.track_pos += dist * car.track_facing
+        car.track_pos += dist
 
         # Is the car off the end?
         if car.track_pos > self.length:
             self.leave(car)
-            if self.neighbours_at[self.end]:
-                next_segment = car.choose_next_track(self.neighbours_at[self.end])
-                next_segment.enter(car, self.end.scaled(-1), car.track_pos - self.length)
+            dir = car.track_facing
+            if self.neighbours_at[dir]:
+                next_segment = car.choose_next_track(self.neighbours_at[dir])
+                next_segment.enter(car, dir.scaled(-1), car.track_pos - self.length)
             else:
                 car.speed = 0
                 log.warning("Car {} crashed off the {} end of {}.".format(car, self.end, self))
 
-        # Is the car off the start?
         if car.track_pos < 0:
-            self.leave(car)
-            if self.neighbours_at[self.start]:
-                next_segment = car.choose_next_track(self.neighbours_at[self.start])
-                next_segment.enter(car, self.start.scaled(-1), -car.track_pos)
-            else:
-                car.speed = 0
-                print("Car {} crashed off the {} end of {}.".format(car, self.start, self))
+            log.warning("Car {} has a pos less than 0.".format(car))
 
     def __str__(self):
         return super().__str__("2Track")
@@ -520,8 +514,11 @@ class TrainCar:
                     self.speed = 0  # TODO deceleration limit
                     self.plan = None  # TODO plan?
                 else:
-                    # FIXME Check if we need to turn around.
-                    # self.plan.get_next_track()
+                    required_dir = self.plan.get_next_track().tile.hex - self.track.tile.hex
+                    if self.track_facing != required_dir:
+                        log.info("{} turning around to follow path.".format(car))
+                        self.track_facing = required_dir
+
 
                     self.speed = 1  # TODO acceleration over time
 
@@ -532,7 +529,7 @@ class TrainCar:
                 # Actually cause the car to move.
                 self.track.move_car(self, self.speed)
             else:
-                log.warn("{} has -ve speed: {}".format(self, self.speed))
+                log.warning("{} has -ve speed: {}".format(self, self.speed))
 
 
     def strs(self, **kwargs):
