@@ -134,8 +134,8 @@ while True:
         # Currently build track.
         if event.type == MOUSEBUTTONDOWN and event.button == 1:
             # Building tracks.
-                landscape.build_track_start()
-                currently_building = True
+            landscape.build_track_start()
+            currently_building = True
         elif event.type == MOUSEBUTTONUP and event.button == 1:
             landscape.build_track_commit()
             currently_building = False
