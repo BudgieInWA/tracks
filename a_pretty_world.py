@@ -152,11 +152,8 @@ while True:
         landscape.build_track_select_hex(mouse_hex)
 
     #
-    # Advance the game state.
-    # TODO Advance time in turns, when the user gives input, or every 1 sec or something.
-
-    # TODO Only advance the game state if we've passed a tick threshold.
-    if step % STEPS_PER_TURN == 0:
+    # Take a turn
+    if step % STEPS_PER_TURN == 0:  # TODO Do turn advances better
         landscape.do_step()
 
     #
@@ -203,7 +200,7 @@ while True:
                 arc_center = hexgrid.hex_to_pixel(layout, tile.hex.add(track.arc_center_dir))
                 track.xy_arc_center = arc_center
                 angle_to_hex_center = -pygame.math.Vector2(1, 0).angle_to(pygame.math.Vector2(center) - pygame.math.Vector2(arc_center))
-                track.xy_start_angle = (angle_to_hex_center - 30) * math.pi / 180.0 # TODO figure out order
+                track.xy_start_angle = (angle_to_hex_center - 30) * math.pi / 180.0  # TODO figure out order
                 track.xy_end_angle = (angle_to_hex_center + 31) * math.pi / 180.0
                 R = HEX_BIG_RADIUS * 1.5
 

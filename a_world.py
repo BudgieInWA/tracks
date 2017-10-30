@@ -332,16 +332,22 @@ class Inventory(dict):
             default = resource_capacity
 
         if kv is not None:
-            self.caps = defaultdict(lambda: default, mapping=kv)  #TODO
+            self.caps = defaultdict(lambda: default, mapping=kv)
         else:
             self.caps = defaultdict(lambda: default)
 
-    # TODO
-    # += and -= with bounds checks
+    #TODO += and -= with bounds checks
 
     @staticmethod
     def trade(giver_inv, receiver_inv, resource, count, price):
-        # TODO
+        """
+        :param giver_inv:
+        :param receiver_inv:
+        :param resource:
+        :param count:
+        :param price:
+        :return:
+        """
         if giver_inv[resource] < count or receiver_inv.cap[resource] < count:
             return False
         if receiver_inv[Resource.Currency] < price:
@@ -532,10 +538,13 @@ class TrainCar:
         else:
             # Decide what movements to make: accelerate, coast, decelerate, turn around
 
+            if self.plan is None:
+                pass  # TODO Plan.
+
             if self.plan is not None:
                 if self.plan.done():
                     self.speed = 0  # TODO deceleration limit
-                    self.plan = None  # TODO plan?
+                    self.plan = None
                 else:
                     required_dir = self.plan.get_next_track().tile.hex.subtract(self.track.tile.hex)
                     if self.track_facing != required_dir:
@@ -547,7 +556,7 @@ class TrainCar:
 
             if self.speed == 0:
                 # Do trades and such.
-                pass  # TODO
+                pass  # TODO Choose trades to do.
             elif self.speed > 0:
                 # Actually cause the car to move.
                 self.track.move_car(self, self.speed)
