@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-import logging
 import collections
 import math
 import pygame
@@ -12,7 +11,7 @@ import hexgrid
 
 from a_world import *
 
-
+import logging
 log = logging.getLogger(__name__)
 
 
@@ -156,12 +155,9 @@ while True:
     # Advance the game state.
     # TODO Advance time in turns, when the user gives input, or every 1 sec or something.
 
-    try:
-        # TODO Only advance the game state if we've passed a tick threshold.
-        if step % STEPS_PER_TURN == 0:
-            landscape.do_step()
-    except BaseException as e:
-        log.error(e)
+    # TODO Only advance the game state if we've passed a tick threshold.
+    if step % STEPS_PER_TURN == 0:
+        landscape.do_step()
 
     #
     # Draw everything, starting with a blank canvas.
@@ -249,14 +245,20 @@ while True:
         if car.track:
             car_xy = None
             if isinstance(car.track, StraightTrack):
-                car_xy = car.track.xy_start + car.track.xy_vector * car.track_pos
+                if car.track_facing == car.track.end:
+                    car_xy = car.track.xy_start + car.track.xy_vector * car.track_pos
+                elif car.track_facing == car.track.start:
+                    car_xy = car.track.xy_start + car.track.xy_vector * (car.track.length - car.track_pos)
+                else:
+                    log.warning("{} is facing a direction that the track it is on does not connect to.".format(car))
 
             elif isinstance(car.track, CurvedTrack):
                 R = HEX_BIG_RADIUS * 1.5
                 angle_diff = car.track_pos
-                if car.track_facing < 0:
-                    angle_diff = car.track.length - angle_diff
-                if car.track.angle_dir * car.track_facing < 1:
+                if car.track_facing == car.track.end:
+                    angle_diff = car.track.length - car.track_pos
+                facing_sign = 1 if car.track_facing == car.track.end else -1
+                if car.track.angle_dir * facing_sign < 1:
                     angle = car.track.xy_end_angle - angle_diff
                 else:
                     angle = car.track.xy_start_angle + angle_diff

@@ -10,7 +10,10 @@ from clint.textui import colored, puts, min_width
 
 import logging
 log = logging.getLogger(__name__)
-log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)  # FIXME
+log.info = log.critical
+log.debug("DEBUG output on.")
+log.info("INFO output on.")
 
 
 EPS = 1e-4
@@ -70,6 +73,10 @@ def strs(ss, depth_limit=10, kids=None):
 
 
 class Hex(namedtuple('Hex', ['r', 'q'])):
+    #TODO all the operators
+    def __sub__(self, other):
+        raise NotImplementedError()
+
     def add(self, other):
         return Hex(self.r + other.r, self.q + other.q)
 
@@ -83,7 +90,7 @@ class Hex(namedtuple('Hex', ['r', 'q'])):
         return (self.add(d) for d in Hex.directions)
 
     def distance(self, h):
-        return (abs(self.q - h.q) 
+        return (abs(self.q - h.q)
               + abs(self.q + self.r - h.q - h.r)
               + abs(self.r - h.r)) / 2
 
@@ -201,7 +208,8 @@ class Track:
     def strs(self, depth_limit=10):
         return strs(str(self), depth_limit=depth_limit, kids=self.cars)
 
-    def __str__(self, name="Track"):
+    def __str__(self):
+        name = self.__class__.__name__
         return "<{} {} between dirs {}>".format(name, self.label, ", ".join(map(str, self.dirs)))
 
 
@@ -225,18 +233,17 @@ class Track2(Track):
         else:
             raise ValueError("Cannot create 2track on tile {} between directions {} and {}".format(tile, dir1, dir2))
 
-    def enter(self, car, dir, dist):
+    def enter(self, car, from_dir, dist):
         super().add_car(car)
 
-        if dir == self.start:
-            car.track_facing = 1  # FIXME change track_facing to a dir
-            car.track_pos = 0
-        elif dir == self.end:
-            car.track_facing = -1
-            car.track_pos = self.length
+        car.track_pos = 0
+        if from_dir == self.start:
+            car.track_facing = self.end
+        elif from_dir == self.end:
+            car.track_facing = self.start
         else:
-            raise ValueError("could not add {car} to track because track doesn't go to direction {dir}"
-                    .format(car=car, dir=dir))
+            raise ValueError("could not add {car} to track because track doesn't have an end at {dir}"
+                             .format(car=car, dir=from_dir))
 
         if dist > 0:
             self.move_car(car, dist)
@@ -246,30 +253,24 @@ class Track2(Track):
 
         dist_fraction = dist / 10  # FIXME New length
 
-        car.track_pos += dist_fraction * car.track_facing
+        car.track_pos += dist_fraction
 
         # Is the car off the end?
         if car.track_pos > self.length:
             self.leave(car)
-            if self.neighbours_at[self.end]:
-                next_segment = car.choose_next_track(self.neighbours_at[self.end])
-                next_segment.enter(car, self.end.scaled(-1), car.track_pos - self.length)
+            facing = car.track_facing
+            if self.neighbours_at[facing]:
+                next_segment = car.choose_next_track(self.neighbours_at[facing])
+                next_segment.enter(car, facing.scaled(-1), car.track_pos - self.length)
             else:
                 car.speed = 0
                 log.warning("Car {} crashed off the {} end of {}.".format(car, self.end, self))
 
-        # Is the car off the start?
         if car.track_pos < 0:
-            self.leave(car)
-            if self.neighbours_at[self.start]:
-                next_segment = car.choose_next_track(self.neighbours_at[self.start])
-                next_segment.enter(car, self.start.scaled(-1), -car.track_pos)
-            else:
-                car.speed = 0
-                print("Car {} crashed off the {} end of {}.".format(car, self.start, self))
+            log.warning("Car {} has a pos less than 0.".format(car))
 
     def __str__(self):
-        return super().__str__("2Track")
+        return super().__str__()
 
 
 class StraightTrack(Track2):
@@ -279,6 +280,8 @@ class StraightTrack(Track2):
     def __init__(self, tile, dir1):
         super().__init__(tile, 1.0, dir1, dir1.scaled(-1))
 
+    def __str__(self):
+        return super().__str__()
 
 class CurvedTrack(Track2):
     """Track that goes from one edge to an edge two spots away."""
@@ -299,11 +302,12 @@ class CurvedTrack(Track2):
             raise ValueError("start_dir and end_dir are not two hexes from oneanother")
 
     def __str__(self):
-        return Track.__str__(self, "CurvedTrack")
+        return Track.__str__(self)
 
 
 class Station(StraightTrack):
-    pass
+    def __str__(self):
+        return super().__str__()
 
 
 class Resource(Enum):
@@ -397,21 +401,25 @@ class TrackMovementPlan:
     def __init__(self, path=None):
         self.path = path
 
-        self.current_path_index = 0
+        self.current_path_index = -1
+
+    def done(self):
+        return self.current_path_index + 1 >= len(self.path)
 
     def get_next_track(self):
-        return self.path[self.current_path_index]
+        if self.done():
+            return None
+        return self.path[self.current_path_index + 1]
 
     def advance_to(self, track):
-        expected_track = self.get_next_track().hex
+        expected_track = self.get_next_track()
         if track != expected_track:
-            raise ValueError("{} was not the expected track, {}".format(track, expected_track))
+            raise ValueError("Cannot advance to {} as it is not in the plan: {}".format(track, self))
 
         self.current_path_index += 1
 
-    def done(self):
-        return self.current_path_index == len(self.path) - 1
-
+    def __str__(self):
+        return "<TrackMovementPlan at {} through {}>".format(self.current_path_index, self.path)
 
 class TrainCar:
     def __init__(self):
@@ -435,7 +443,13 @@ class TrainCar:
         pass
 
     def enact_plan(self, plan):
-        self.plan = plan
+        try:
+            plan.advance_to(self.track)
+            self.plan = plan
+        except ValueError:
+            log.warning("Plan doesn't start where I am ({}): {}".format(self.track.tile.hex, plan))
+
+
 
     def pathfind_to(self, target, length_limit=100, time_budget=1000):
         """
@@ -443,8 +457,10 @@ class TrainCar:
 
         Flood fill to see if you can find the target.
         """
-        # FIXME seems not to be working
         origin = self.track
+        if origin is None:
+            log.warning("{} is trying to pathfind, but isn't on a track.".format(self))
+            return None
         destination = None
 
         # Set up initial state.
@@ -479,11 +495,12 @@ class TrainCar:
                                 parents[next_track] = track
                                 queue.append((next_track, dir))
 
-            except KeyError as empty_queue:
+            except IndexError as empty_queue:
                 log.debug("Finishing due to empty queue.")
                 break
 
         if destination is None:
+            log.info("No path to {}.".format(target))
             return None
 
         # Walk the parents tree, building the path.
@@ -492,6 +509,8 @@ class TrainCar:
         while track is not None:
             path.appendleft(track)
             track = parents[track]
+
+        log.info("Found path: {}".format(path))
         return path
 
 
@@ -499,20 +518,18 @@ class TrainCar:
         if self.plan is not None:
             planned_track = self.plan.get_next_track()
             if planned_track in tracks:
-                return self.plan.advance_to(planned_track)
+                self.plan.advance_to(planned_track)
+                return planned_track
             else:
                 self.plan = None
-
-        if self.plan is None:
-            self.enact_some_plan()
-            if self.plan is not None:
-                return self.choose_next_track(tracks)
 
         return random.choice(list(tracks))
 
 
     def do_step(self):
-        if self.track is not None:
+        if self.track is None:
+            pass
+        else:
             # Decide what movements to make: accelerate, coast, decelerate, turn around
 
             if self.plan is not None:
@@ -520,8 +537,11 @@ class TrainCar:
                     self.speed = 0  # TODO deceleration limit
                     self.plan = None  # TODO plan?
                 else:
-                    # FIXME Check if we need to turn around.
-                    # self.plan.get_next_track()
+                    required_dir = self.plan.get_next_track().tile.hex.subtract(self.track.tile.hex)
+                    if self.track_facing != required_dir:
+                        log.info("{} turning around to follow path.".format(self))
+                        self.track_facing = required_dir
+
 
                     self.speed = 1  # TODO acceleration over time
 
@@ -532,7 +552,7 @@ class TrainCar:
                 # Actually cause the car to move.
                 self.track.move_car(self, self.speed)
             else:
-                log.warn("{} has -ve speed: {}".format(self, self.speed))
+                log.warning("{} has -ve speed: {}".format(self, self.speed))
 
 
     def strs(self, **kwargs):
