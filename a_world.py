@@ -12,8 +12,8 @@ import logging
 log = logging.getLogger(__name__)
 log.setLevel(logging.DEBUG)  # FIXME
 log.info = log.critical
-log.debug("DEBUG output on.")
-log.info("INFO output on.")
+log.debug("{} DEBUG output on.".format(__name__))
+log.info("{} INFO output on.".format(__name__))
 
 
 EPS = 1e-4
@@ -366,6 +366,13 @@ class Inventory(dict):
         return ", ".join("{} ({:.1f})".format(r, c) for r, c in self.values() if c > 0) or "nothing"
 
 
+
+class FetchQuest:
+    def __init__(self, payload, reward):
+        self.payload = payload
+        self.reward = reward
+
+
 class Home:
     def __init__(self):
         self.inventory = Inventory(resource_capacity=None)
@@ -383,6 +390,17 @@ class Home:
         return "Home"
 
 
+class SellOffer(namedtuple('SellOffer', ['resource', 'price', 'available'])):
+    pass
+
+class Sale:
+    def __init__(self, seller, buyer, resources, price):
+        self.seller = seller
+        self.buyer = buyer
+        self.resources = resources
+        self.price = price
+
+
 class Forest:
     def __init__(self, rate=2):
         self.inventory = Inventory({
@@ -390,11 +408,19 @@ class Forest:
         })
         self.rate = rate
 
+        self.sales = set()
+
     def do_step(self):
         try:
             self.inventory[Resource.Wood] += self.rate
         except:
             pass
+
+    def get_menu(self):
+        unsold_wood = self.inventory[Resource.Wood] - sum(sale.resources[Resource.Wood] for sale in self.sales)
+        return {
+            SellOffer(Resource.Wood, 2, unsold_wood)
+        }
 
     def strs(self, **kwargs):
         return strs(str(self), **kwargs)
@@ -439,14 +465,7 @@ class TrainCar:
         self.speed = 0
 
         self.plan = None
-
-        self.enact_some_plan()
-
-    def enact_some_plan(self):
-        """"""
-        # TODO Look for a job to do, basically
-        #self.enact_plan(some_plan)
-        pass
+        self.sales = set()
 
     def enact_plan(self, plan):
         try:
@@ -583,6 +602,7 @@ class Landscape:
         # Create linked Tiles for the region.
         self.tiles = dict((h, Tile(h)) for h in self.hexes)
 
+        self.buildings = set()
         self.trains = []
 
         self.build_path = None
@@ -617,13 +637,31 @@ class Landscape:
         """
 
         # TODO Use the random shape to add features to the map.
-        self.build(Hex(0, 0), Home())
+        home = Home()
+        home.inventory[Resource.Currency] += 100
+        self.build(Hex(0, 0), home)
         self.build(Hex(2, 0), Forest())
 
     def do_step(self):
         for tile in self.tiles.values():
             tile.do_step()
         for car in self.trains:
+            # TODO do planning in a better spot
+            if car.plan is None:
+                if car.inventory.is_empty():
+                    # Assume we want to buy any full load of resources that we can reach
+                    for building in self.buildings:
+                        try:
+                            for offer in building.get_menu():
+                                cap = car.inventory.cap(offer.resource)
+                                if offer.available >= cap:
+                                    sale = Sale(building, car, Inventory({offer.resource: cap}), cap * offer.price)
+                                    building.sales.add(sale)
+                                    car.sales.add(sale)
+                else:
+                    # Try to deliver resources home.
+
+
             car.do_step()
 
 
@@ -733,6 +771,7 @@ class Landscape:
         
         else:
             self.tiles[hex].buildings.append(building)
+            self.buildings.add(building)
 
     def scan_land(self, bounding_rectangle=None):
         """Return lands in scanline order."""
